@@ -1,8 +1,11 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+// ---------------------------------------------------------------------------
+// 🗄️ Prisma schema — PostgreSQL (Neon) for production on Vercel.
+// Provider switched from `sqlite` to `postgresql` for the Vercel + Neon
+// deployment. All model types below are PostgreSQL-compatible (cuid() ids,
+// DateTime, Boolean, String for JSON-as-text). Schema management is handled
+// by `prisma migrate deploy` (see prisma/migrations/), NOT by the runtime
+// self-healer which is SQLite-only and disabled on PostgreSQL.
+// ---------------------------------------------------------------------------
 
 generator client {
   provider = "prisma-client-js"
@@ -13,20 +16,645 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model User {
+// پیام‌های فرم پشتیبانی (صفحهٔ Support)
+model SupportMessage {
+  id        String   @id @default(cuid())
+  name      String
+  email     String
+  topic     String   @default("general")
+  message   String
+  status    String   @default("new") // new | in-progress | resolved
+  createdAt DateTime @default(now())
+}
+
+// درخواست‌های ثبت‌نام کلاس (صفحهٔ Register)
+model Registration {
+  id        String   @id @default(cuid())
+  name      String
+  email     String
+  phone     String?
+  // 🔗 فاز ۶۰ — پیوند پایدار به حساب کاربری (User ↔ Unique Code ↔ Registration
+  // ↔ Order ↔ Payment). رکوردهای قدیمیِ مهمان null دارند و هرگز به‌سرور بازسازی
+  // نمی‌شوند؛ کاربرِ واردشده همیشه به رکورد موجودش وصال می‌شود (ضد رکورد تکراری)
+  userId    String?
+  user      User?    @relation("RegistrationUser", fields: [userId], references: [id], onDelete: SetNull)
+  age       Int?     // منسوخ — تاریخ تولد حالا در پروفایل حساب کاربری (User) ذخیره می‌شود
+  level     String
+  classType String   @default("group")
+  // 🗄️ حذف نرم (فاز ۵۲) — رکورد هرگز سخت‌حذف نمی‌شود تا تاریخچهٔ پیگیری ادمین
+  // و پیوند ClassSchedule.registrationId سالم بماند؛ «حذف» یعنی بایگانی (deletedAt)
+  deletedAt DateTime?
+  classTitle String? // عنوان کلاس انتخاب‌شده (وقتی کاربر از صفحهٔ کلاس‌ها/آزمون می‌آید)
+  schedule  String?  // قدیمی — متن آزاد؛ رکوردهای قبل از فاز ۴۷
+  goal      String?
+  message   String?
+  status    String   @default("new") // new | contacted | enrolled
+  // 🗓️ ترجیحات ساخت‌یافتهٔ برنامه (فاز ۴۷) — تنظیمات زمانی اصلی کاربر حفظ می‌شود
+  timezone       String  @default("") // IANA مثل Asia/Tehran — از فهرست مجاز سرور
+  preferredDays  String  @default("[]") // JSON ["mon","wed"] — حداکثر ۳
+  preferredTimes String  @default("[]") // JSON [{start:"18:00",end:"19:00"}] — حداکثر ۲
+  daysPerWeek    Int? // ۱ تا ۳ — باید ≤ تعداد روزهای انتخابی باشد
+  scheduleAck    Boolean @default(false) // تأیید صریح «این ترجیح است، نه برنامهٔ نهایی»
+  createdAt DateTime @default(now())
+
+  schedules ClassSchedule[] // جلساتی که از این ثبت‌نام مشتق شده‌اند (فاز ۴۸)
+
+  @@index([userId])
+}
+
+// مشترکان خبرنامه (فرم پایین فوتر)
+model NewsletterSubscriber {
   id        String   @id @default(cuid())
   email     String   @unique
-  name      String?
+  createdAt DateTime @default(now())
+}
+
+// مقالات وبلاگ/اخبار (صفحهٔ Blog — مدیریت از پنل ادمین)
+model Post {
+  id        String   @id @default(cuid())
+  title     String
+  slug      String   @unique
+  tag       String   @default("news") // news | culture | tips | hsk
+  emoji     String   @default("📝") // ایموجی روی کاور
+  color     String   @default("sage") // sage | butter | peach
+  image     String?  // آدرس تصویر کاور (اختیاری — اگر خالی باشد گرادیان برند نمایش داده می‌شود)
+  views     Int      @default(0) // شمارندهٔ بازدید هر مقاله
+  excerpt   String
+  content   String
+  published Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
-model Post {
+// نظرات ثبت‌شدهٔ کاربران (فرم «تجربهٔ خود را بنویسید» در صفحهٔ نظرات)
+// نظر جدید اول «pending» است و فقط بعد از تأیید ادمین در سایت نمایش داده می‌شود
+// featured = نظر منتخب مالک (نظرات ثابت کاروسل خانه/صفحهٔ نظرات) — از پنل قابل ویرایش است
+model Testimonial {
+  id        String    @id @default(cuid())
+  name      String
+  role      String?   // مثلاً «HSK 2 Student» — اختیاری
+  rating    Int       @default(5) // ۱ تا ۵ ستاره
+  text      String
+  status    String    @default("pending") // pending | approved | rejected
+  featured  Boolean   @default(false) // ⭐ نظر منتخب — در کاروسل خانه و بخش «Testimonials» صفحهٔ نظرات
+  likeCount Int       @default(0) // ❤️ تعداد لایک — تنها منبع حقیقت؛ سمت سرور در تراکنش به‌روز می‌شود
+  createdAt DateTime  @default(now())
+  // 🗄️ حذف نرم (فاز ۵۵) — «حذف» یعنی بایگانی؛ رکورد و شمارندهٔ لایک‌هایش هرگز پاک نمی‌شود
+  deletedAt DateTime?
+
+  likes ReviewLike[]
+
+  @@index([status, featured])
+}
+
+// ❤️ لایک نظر — هر بازدیدکنندهٔ یکتا فقط یک لایک به هر نظر (تاگل لایک/حذف لایک)
+// visitorId = هش sha256(IP|UA) سمت سرور — خودِ IP هرگز ذخیره نمی‌شود
+model ReviewLike {
+  id            String      @id @default(cuid())
+  testimonialId String
+  testimonial   Testimonial @relation(fields: [testimonialId], references: [id], onDelete: Cascade)
+  visitorId     String
+  createdAt     DateTime    @default(now())
+
+  @@unique([testimonialId, visitorId]) // ضد لایک تکراری در سطح دیتابیس
+  @@index([visitorId])
+}
+
+// ❓ سؤالات متداول — تنها منبع حقیقت FAQ (فاز ۴۶)
+// صفحهٔ عمومی Support و تب ادمین هر دو از همین جدول می‌خوانند؛
+// آیتم‌های فایل محتوا فقط تا لحظهٔ رسیدن پاسخ سرور نمایش داده می‌شوند (fallback).
+model FaqItem {
+  id         String    @id @default(cuid())
+  category   String    @default("general") // کلید فیلتر — general | classes | payment | technical
+  question   String
+  answer     String
+  sortOrder  Int       @default(0) // ترتیب نمایش (کمتر = بالاتر)
+  published  Boolean   @default(true) // خاموش = از سایت عمومی پنهان (پیش‌نویس)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  // 🗄️ حذف نرم (فاز ۵۵) — بایگانی با امکان بازگردانی؛ هیچ سؤالی پاک‌شدهٔ همیشگی نیست
+  deletedAt  DateTime?
+  // ℹ️ فاز ۵۸ — رأی Like/Dislike (helpfulYes/No + جدول FaqVote) به درخواست مالک
+  // حذف شد؛ این مقادیر فقط توسط بازخورد FAQ استفاده می‌شدند و جایگزینی امن دارند.
+
+  @@index([published, sortOrder])
+}
+
+// واژه‌های فلش‌کارت صفحهٔ Learn — از پنل ادمین اضافه/ویرایش/حذف می‌شود
+// اگر جدول خالی باشد، واژه‌های پیش‌فرض از فایل محتوا نمایش داده می‌شوند
+model LearnCard {
   id        String   @id @default(cuid())
-  title     String
-  content   String?
-  published Boolean  @default(false)
-  authorId  String
+  chinese   String // کاراکتر چینی
+  pinyin    String // تلفظ پین‌یین با علامت تُن
+  meaning   String // معنی انگلیسی
+  example   String? // جملهٔ نمونه (اختیاری)
+  sortOrder Int      @default(0) // ترتیب نمایش
+  published Boolean  @default(true)
+  createdAt DateTime @default(now())
+}
+
+// سؤالات آزمون تعیین سطح صفحهٔ Learn — از پنل ادمین مدیریت می‌شود
+// گزینه‌ها به‌صورت JSON ذخیره می‌شوند: [{"text":"...","score":1}, …]
+// اگر جدول خالی باشد، سؤالات پیش‌فرض از فایل محتوا نمایش داده می‌شوند
+model QuizQuestion {
+  id        String   @id @default(cuid())
+  question  String
+  options   String // JSON آرایهٔ گزینه‌ها
+  sortOrder Int      @default(0)
+  published Boolean  @default(true)
+  createdAt DateTime @default(now())
+}
+
+// 🧪 تسک ۸۲ — تلاش‌های آزمون تعیین سطح + کپچر ایمیل (سرنخ فروش)
+// نمره و باند همیشه سمت سرور محاسبه می‌شود؛ کلاینت فقط شناسهٔ سؤال و ایندکس گزینه را می‌فرستد
+model QuizAttempt {
+  id        String   @id @default(cuid())
+  score     Int // جمع امتیاز واقعی از گزینه‌های انتخابی
+  maxScore  Int // حداکثر امتیاز ممکن از همین سؤالات
+  band      String // beginner | elementary | intermediate
+  email     String? // سرنخ اختیاری — اگر کاربر ایمیلش را گذاشت
+  answers   String // JSON: [{questionId, optionIndex, score}]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([createdAt])
+}
+
+// معلم‌های صفحهٔ About — از پنل ادمین (تب Teachers) مدیریت می‌شوند
+// اگر جدول خالی باشد، تیم پیش‌فرض از فایل محتوا نمایش داده می‌شود
+model Teacher {
+  id        String   @id @default(cuid())
+  name      String // نام کامل
+  role      String // عنوان شغلی (مثلاً Beginner Teacher)
+  bio       String   @default("") // بیو کوتاه
+  tag       String   @default("") // برچسب تخصص (مثلاً Beginners)
+  langs     String   @default("Chinese, English") // زبان‌های تدریس، جدا با کاما
+  image     String?  // عکس (اختیاری — خالی = گرادیان برند)
+  // 🆕 رزومه و نمونهٔ تدریس (مودال «Resume & Teaching Samples» صفحهٔ About)
+  resume          String @default("") // متن کامل رزومه — چند پاراگراف، جدا با خط جدید
+  experienceYears Int    @default(0) // سال‌های سابقهٔ تدریس
+  studentsTaught  Int    @default(0) // تعداد دانش‌پذیران
+  certificates    String @default("") // گواهینامه‌ها — هر مورد در یک خط
+  samples         String @default("[]") // JSON آرایهٔ نمونهٔ تدریس: [{kind:"video|audio|text|dialog",title,url,desc}]
+  sortOrder Int      @default(0)
+  published Boolean  @default(true)
+  createdAt DateTime @default(now())
+}
+
+// درس‌های بخش Learn — کارت + محتوای درس (واژه‌ها) همه از پنل ادمین (تب Lessons)
+// words به‌صورت JSON ذخیره می‌شود: [{"chinese":"你好","pinyin":"nǐ hǎo","meaning":"Hello","example":"..."}]
+// اگر جدول خالی باشد، کارت‌ها و درس‌های پیش‌فرض فایل محتوا نمایش داده می‌شوند
+model Lesson {
+  id        String   @id @default(cuid())
+  slug      String   @unique // کلید دیپ‌لینک (?lesson=slug) — مثلاً greetings
+  title     String // عنوان کارت و مودال
+  text      String   @default("") // توضیح روی کارت
+  subtitle  String   @default("") // توضیح بالای مودال درس
+  big       String   @default("") // کاراکتر بزرگ روی کارت (مثلاً 你好 یا 🧧)
+  small     String   @default("") // زیرنویس کوچک کارت (پین‌یین)
+  tag       String   @default("") // برچسب کارت (Vocabulary / Culture …)
+  category  String   @default("vocabulary") // دستهٔ فیلتر Learn (مثل vocabulary everyday)
+  color     String   @default("sage") // sage | butter | peach | cream
+  action    String   @default("Learn") // متن دکمهٔ کارت (Learn / Watch)
+  isVideo   Boolean  @default(false) // نشان Video روی کارت
+  words     String   @default("[]") // JSON آرایهٔ واژه‌های درس
+  sortOrder Int      @default(0)
+  published Boolean  @default(true)
+  createdAt DateTime @default(now())
+}
+
+// تنظیمات سایت (کلید-مقدار JSON) — آنچه مالک از پنل (تب Settings) عوض می‌کند:
+//   «announcement» = نوار اعلان بالای سایت | «homeStats» = آمار داشبورد صفحهٔ اول
+// اگر کلیدی در دیتابیس نباشد، مقدار پیش‌فرض فایل محتوا استفاده می‌شود
+model SiteSetting {
+  key       String   @id
+  value     String // JSON
+  updatedAt DateTime @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// 👤 حساب‌های کاربری واقعی سایت (ثبت‌نام/ورود مشتریان) — فاز ۳۰
+// امنیت: رمز با scrypt هش می‌شود (salt:hash) — رمز خام و هش هرگز به کلاینت
+// نمی‌رود و در هیچ API ادمین هم select نمی‌شود.
+// telegramUsername نرمال‌شده و بدون @ ذخیره می‌شود؛ telegramId (عددی) فعلاً
+// null می‌ماند و برای اتوماسیون‌های آیندهٔ تلگرام در نظر گرفته شده است.
+// ---------------------------------------------------------------------------
+model User {
+  id               String    @id @default(cuid())
+  email            String    @unique
+  passwordHash     String // scrypt — فرمت «salt:hash»
+  firstName        String
+  lastName         String
+  dateOfBirth      DateTime? // 🎂 تاریخ تولد — در ثبت‌نام حساب اجباری است (کاربران قدیمی null)
+  country          String    @default("") // نام کامل کشور از سلکتور ISO
+  countryCode      String    @default("") // کد ISO 3166-1 alpha-2 (مثل DE)
+  phone            String? // شمارهٔ تماس — اختیاری
+  telegramUsername String? // نرمال‌شده، بدون @ — اختیاری و بدون یکتایی سراسری
+  telegramId       String? // شناسهٔ عددی تلگرام — هنوز در دسترس نیست؛ برای آینده
+  // 🆔 فاز ۶۰ — کد یکتای پایدار دانش‌پذیر (CT-XXXXXX): یک‌بار هنگام ساخت حساب
+  // ساخته و برای همیشه ذخیره می‌شود — هرگز با restart/redeploy/login دوباره
+  // تولید نمی‌شود. DB تنها منبع حقیقت است (بند ۱۰ تسک پایداری)
+  uniqueCode       String?   @unique
+  lastLoginAt      DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  orders   UsdtOrder[]
+  sessions UserSession[]
+  resetTokens PasswordResetToken[]
+  registrations Registration[] @relation("RegistrationUser")
+  schedules        ClassSchedule[] @relation("ScheduleUser")
+  scheduleAlerts   ScheduleNotification[]
+
+  @@index([createdAt])
+}
+
+// 🔑 نشست‌های ورود کاربر — توکن تصادفی ۳۲بایتی در کوکی httpOnly؛
+// فقط sha256 توکن در دیتابیس ذخیره می‌شود (خود توکن هرگز).
+model UserSession {
+  id        String   @id @default(cuid())
+  tokenHash String  @unique // sha256(token)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userAgent String   @default("")
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+// 🔐 توکن‌های بازیابی رمز عبور (فاز ۴۰)
+// امنیت: توکن تصادفی ۳۲بایتی فقط به‌صورت sha256 ذخیره می‌شود (توکن خام هرگز
+// به دیتابیس/لاگ/پاسخ نمی‌رود)؛ یک‌بارمصرف (usedAt) و زمان‌محدود (۶۰ دقیقه).
+// بعد از تغییر موفق رمز، همهٔ توکن‌های بازِ کاربر و همهٔ نشست‌های فعالش باطل
+// می‌شوند (خارج‌شدن اجباری از همهٔ دستگاه‌ها).
+// ---------------------------------------------------------------------------
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  tokenHash String    @unique // sha256(token)
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime // حداکثر ۶۰ دقیقه پس از ساخت
+  usedAt    DateTime? // ست‌شدن یعنی مصرف‌شده — هرگز دوباره قابل استفاده نیست
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+// 🧾 سفارش‌های خرید کلاس
+// از فاز ۵۹ روش پرداختِ فعال «کارت بانکیِ دستی + رسید + تأیید ادمین» است
+// (paymentMethod = MANUAL_BANK_CARD)؛ ردیف‌های قدیمی با paymentMethod =
+// USDT_TRON (پرداخت آنلاین سابق) دست‌نخورده و حفظ شده‌اند.
+// مبلغ‌ها به «میکرو» ذخیره می‌شوند (۱ واحد = ۱٬۰۰۰٬۰۰۰) تا هیچ خطای اعشاری رخ ندهد.
+// وضعیت‌ها:
+//   جریانِ دستی: PENDING (پرداخت‌نشده) → RECEIPT_SUBMITTED (رسید در انتظار بررسی)
+//                → PAID (تأیید ادمین) | REJECTED (ردّ ادمین) → [ارسال دوبارهٔ رسید]
+//   CANCELLED (لغو ادمین) — جریانِ تاریخیِ USDT: DETECTED | UNDERPAID | EXPIRED
+// txHash یکتاست → هر تراکنش قدیمی روی blockchain فقط یک‌بار مصرف شده (ضد replay)
+// receiptId یکتا و غیرقابل‌حدس است — فایل رسید هرگز در پوشهٔ عمومی نیست و فقط
+// از مسیر احرازِ مالک/ادمین سرو می‌شود.
+// ---------------------------------------------------------------------------
+model UsdtOrder {
+  id             String    @id @default(cuid())
+  ref            String    @unique // شناسهٔ عمومی سفارش (CT-XXXXXXXX) — در URL صفحهٔ پرداخت
+  userId         String? // کاربرِ صاحب سفارش (سیستم حساب‌ها) — سفارش‌های مهمانِ قدیمی null می‌ماند
+  user           User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  productId      String // شناسهٔ محصول در سکشن payments فایل محتوا (سمت سرور اعتبارسنجی می‌شود)
+  productTitle   String
+  contactName    String    @default("")
+  contactEmail   String    @default("")
+  expectedMicro  Int // مبلغ مورد انتظار (میکرو-USDT) — سرور از روی محتوا تعیین می‌کند، نه مرورگر
+  currency       String    @default("USDT")
+  network        String    @default("TRON")
+  paymentMode    String // "hd" (آدرس یکتای هر سفارش) یا "shared" (آدرس ثابت + مبلغ یکتا)
+  paymentAddress String // آدرس تحویل این سفارش
+  addressIndex   Int? // ایندکس مشتق‌شده در حالت HD (m/44'/195'/0'/0/i)
+  clientIp       String    @default("") // برای سقف سفارش بازِ هر IP (کنترل سوءاستفاده)
+  // 💰 اسنپ‌شات قیمت‌گذاری (فاز ۴۷) — سفارش‌های تاریخی حتی بعد از تغییر کلاس/تخفیف
+  // دست‌نخورده می‌مانند؛ ردیف‌های قدیمی null دارند و فقط به expectedMicro تکیه‌اند
+  pricePerSession Float?
+  packageSessions Int?
+  baseAmount      Float? // pricePerSession × packageSessions
+  tierPercent     Float? // درصد تخفیف خودکارِ بسته (مبتنی بر تعداد جلسه)
+  discountCode    String?
+  discountAmount  Float?
+  // 🎟️ فاز ۵۰ — نوع/مقدار اصلی کد در لحظهٔ سفارش (بند ۱۲): بعد از ویرایش یا
+  // غیرفعال‌سازی کد توسط ادمین، اسنپ‌شات تاریخی سفارش همچنان دقیق می‌ماند
+  discountType    String? // percent | fixed
+  discountValue   Float? // درصد یا مبلغ ثابت در لحظهٔ سفارش
+  // 💳 فاز ۵۹ — روش پرداخت؛ سفارش‌های جدید همیشه MANUAL_BANK_CARD هستند
+  paymentMethod  String    @default("USDT_TRON") // USDT_TRON (تاریخی) | MANUAL_BANK_CARD
+  // 🧾 فاز ۵۹ — رسیدِ پرداخت دستی؛ فایل بیرون از public/ با شناسهٔ غیرقابل‌حدس
+  receiptId          String? // شناسهٔ غیرقابل‌حدس فایل رسید (random 48-hex) — کلید واکشیِ امن
+  receiptStatus      String? // null | PENDING_REVIEW | APPROVED | REJECTED
+  receiptMime        String? // mime واقعی (از magic bytes تشخیص داده می‌شود، نه ادعای مرورگر)
+  receiptSize        Int? // حجم بایت — سقف ۵MB
+  receiptFileName    String? // نام اصلیِ پاک‌سازی‌شده — فقط برای نمایش
+  receiptSubmittedAt DateTime?
+  receiptResubmits   Int       @default(0) // تعداد ارسال دوباره پس از رد
+  reviewedAt         DateTime? // زمان تأیید/ردّ ادمین
+  reviewedBy         String? // نام کاربری ادمین تأییدکننده/ردکننده (ممیزی)
+  rejectionReason    String? // دلیل ردّ — به مشتری نشان داده می‌شود
+  status         String    @default("PENDING")
+  txHash         String? // هش تراکنش تأییدشده — یکتا در کل جدول (ضد استفادهٔ دوباره)
+  txAmountMicro  Int? // مبلغ واقعی دریافت‌شده در تراکنش
+  txFrom         String? // فرستندهٔ تراکنش (برای ممیزی)
+  paidAt         DateTime?
+  expiresAt      DateTime
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([userId])
+
+  @@unique([txHash])
+  @@unique([addressIndex]) // ⬅ ضد مسابقهٔ تخصیص ایندکس HD — SQLite مقادیر null را آزاد می‌گذارد (حالت مشترک سالم است)
+  @@unique([receiptId]) // کلید واکشیِ امنِ رسید — غیرقابل‌حدس
+  @@index([status, expiresAt])
+  @@index([paymentAddress])
+  @@index([paymentMethod, status])
+}
+
+// ---------------------------------------------------------------------------
+// 🎓 کلاس‌های آموزشی — تنها منبع حقیقت کلاس‌ها و قیمت‌ها (فاز ۴۲)
+// قبل از این مدل، کلاس‌ها فقط در فایل محتوا بودند؛ حالا ادمین از پنل، کلاس‌ها
+// را کامل مدیریت می‌کند و صفحهٔ عمومی/ثبت‌نام/چک‌اوت/سفارش همه از همین جدول
+// می‌خوانند (فایل محتوا فقط وقتی جدول خالی است به‌عنوان fallback می‌ماند).
+// قیمتِ مرجع سفارش = packagePrice (همان amountUsd قبلی) — مرورگر هرگز قیمت
+// نمی‌فرستد؛ فقط productId و مبلغ سمت سرور از این جدول خوانده می‌شود.
+// productId و slug یکتا و پایدارند: لینک‌های چک‌اوت و سفارش‌های قدیمی نمی‌شکنند.
+// وضعیت‌ها: active (قابل خرید) | inactive | draft | full (نمایش ولی غیرقابل خرید)
+//           | archived (بایگانی — به‌جای حذف وقتی سفارش/ثبت‌نام دارد)
+// ---------------------------------------------------------------------------
+model CourseClass {
+  id               String    @id @default(cuid())
+  slug             String    @unique // URL عمومی: ‎#/classes/<slug> — حروف کوچک، عدد و خط تیره
+  productId        String    @unique // شناسهٔ پایدارِ پرداخت (همان id قدیمی مثل beginner-chinese-12)
+  title            String // نام کلاس — در ثبت‌نام‌ها (Registration.classTitle) هم ذخیره می‌شود
+  shortDescription String    @default("") // توضیح کوتاه کارت
+  fullDescription  String    @default("") // توضیح کامل جزئیات (اختیاری)
+  category         String    @default("beginner") // کلید فیلتر صفحهٔ کلاس‌ها (چند کلید با فاصله)
+  status           String    @default("active") // active | inactive | draft | full | archived
+  featured         Boolean   @default(false) // ⭐ کلاس منتخب (بخش کلاس‌های صفحهٔ خانه)
+  color            String    @default("sage") // sage | butter | peach | cream
+  // 🧩 نوع و سطح ساخت‌یافته — پایهٔ ماتریس «نوع + سطح» ثبت‌نام (نه متن آزاد)
+  classType        String    @default("group") // group | private | both
+  level            String    @default("All Levels") // برچسب نمایشی (مثل HSK 1)
+  registerLevels   String    @default("[]") // JSON آرایهٔ کلیدهای سطح فرم ثبت‌نام + "all"
+  // 💰 قیمت‌گذاری — packagePrice همان amountUsd منبعِ قبلی است (مبلغ نهایی سفارش)
+  currency         String    @default("USDT") // فقط USDT پشتیبانی می‌شود
+  pricePerSession  Float     @default(0) // قیمت نمایشی هر جلسه
+  packageSessions  Int       @default(1) // تعداد جلسات بسته
+  packagePrice     Float     @default(0) // ⭐ مبلغ مرجع سفارش (USD؛ حداکثر ۲۰۰۰)
+  priceNote        String    @default("") // متن نمایشی کنار قیمت
+  // 📅 اطلاعات کلاس
+  sessionDurationMin Int?    // مدت هر جلسه (دقیقه)
+  format           String    @default("online") // online | offline | hybrid
+  maxStudents      Int?      // حداکثر ظرفیت
+  minStudents      Int?      // حداقل برای برگزاری
+  schedule         String    @default("") // متن نمایشی برنامه (مثل Schedule: TBC)
+  startDate        DateTime? // شروع دوره (اختیاری)
+  endDate          DateTime? // پایان دوره (اختیاری)
+  timezone         String    @default("") // منطقهٔ زمانی برنامه (اختیاری)
+  // 📚 محتوای آموزشی — همه JSON آرایهٔ رشته (نمایش فقط وقتی خالی نیستند)
+  meta             String    @default("[]") // JSON [{icon,text}] — آیتم‌های ریز کارت
+  highlights       String    @default("[]") // JSON رشته — «چه چیزهایی یاد می‌گیرید»
+  requirements     String    @default("[]") // JSON رشته — پیش‌نیازها
+  audience         String    @default("[]") // JSON رشته — مناسب چه کسانی
+  curriculum       String    @default("[]") // JSON رشته — سرفصل‌ها
+  materials        String    @default("[]") // JSON رشته — منابع/ابزار
+  notes            String    @default("") // یادداشت اضافی (اختیاری)
+  // 🖼️ رسانه
+  image            String    @default("") // کاور کارت/جزئیات (URL — معماری فعلی URL-محور است)
+  videoUrl         String    @default("") // ویدیوی معرفی (اختیاری)
+  // ⚙️ متادیتا
+  sortOrder        Int       @default(0) // ترتیب نمایش (کمتر = بالاتر)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  schedules ClassSchedule[] // جلسات برنامه‌ریزی‌شدهٔ این کلاس (فاز ۴۸)
+
+  @@index([status])
+  @@index([classType])
+  @@index([category])
+  @@index([sortOrder])
+}
+
+// 🧾 رویدادهای پرداخت — لاگ ممیزی امن (هرگز کلید یا راز داخلش نیست)
+// UNMATCHED = تراکنش واقعی روی زنجیره که به هیچ سفارش فعالی نخورد → بررسی دستی مالک
+model PaymentEvent {
+  id        String   @id @default(cuid())
+  kind      String // CREATED | TX_SEEN | VERIFIED | PAID | UNDERPAID | UNMATCHED | DUPLICATE_IGNORED | API_ERROR | EXPIRED | CANCELLED | PAGING_LIMIT | LATE_PAYMENT
+  orderRef  String?
+  txHash    String?
+  detail    String   @default("") // JSON جزئیات (مبلغ، آدرس، پیام خطا) — بدون هیچ راز
+  createdAt DateTime @default(now())
+
+  @@index([orderRef])
+  @@index([txHash])
+  @@index([kind, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// 🎟️ سیستم تخفیف (فاز ۴۷) — تنها منبع حقیقت کدهای تخفیف
+// دو نوع: percent (٪ روی مبلغ پایه) و fixed (مبلغ ثابت USDT).
+// محاسبه همیشه سمت سرور است؛ کلاینت فقط «کد» را می‌فرستد.
+// scope: classIds/classTypes/levels خالی = روی همه اعتبار دارد.
+// ---------------------------------------------------------------------------
+model Discount {
+  id          String    @id @default(cuid())
+  code        String    @unique // حروف بزرگ A-Z0-9 (مثل CHINESE10)
+  type        String    @default("percent") // percent | fixed
+  value       Float // درصد (1–100) یا مبلغ ثابت USDT (>0)
+  active      Boolean   @default(true)
+  startsAt    DateTime? // اختیاری — از این لحظه معتبر
+  endsAt      DateTime? // اختیاری — تا این لحظه معتبر (منقضی = رد)
+  classIds    String    @default("[]") // JSON آرایه id کلاس — خالی = همه
+  classTypes  String    @default("[]") // JSON ["group","private"] — خالی = همه
+  levels      String    @default("[]") // JSON کلیدهای سطح ثبت‌نام — خالی = همه
+  minSessions Int       @default(1) // حداقل جلسات بسته برای اعمال
+  maxUses     Int? // سقف کل استفاده — null = نامحدود
+  perCustomer Int       @default(1) // سقف استفاده هر مشتری (بر اساس ایمیل سفارش)
+  note        String    @default("") // یادداشت ادمین
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // 🗄️ حذف نرم (فاز ۵۲) — «حذف» کد یعنی بایگانی: deletedAt ست و active خاموش
+  // می‌شود؛ ردیف + Redemptionها هرگز پاک نمی‌شوند تا سفارش‌های تاریخی دقیق بمانند
+  deletedAt   DateTime?
+
+  redemptions DiscountRedemption[]
+
+  @@index([active])
+}
+
+// 🧾 استفادهٔ هر کد — شمارندهٔ واقعی مصرف (سقف maxUses/perCustomer از همین جدول)
+model DiscountRedemption {
+  id         String   @id @default(cuid())
+  discountId String
+  discount   Discount @relation(fields: [discountId], references: [id], onDelete: Cascade)
+  orderRef   String // CT-XXXXXXXX سفارشِ متناظر
+  userEmail  String // هویت مشتری از پروفایل تأییدشدهٔ کاربر
+  amount     Float // مبلغ تخفیف اعمال‌شده (USDT)
+  createdAt  DateTime @default(now())
+
+  @@index([discountId])
+  @@index([userEmail])
+  @@index([orderRef])
+}
+
+// ---------------------------------------------------------------------------
+// 🗓️ برنامهٔ واقعی جلسات کلاس (فاز ۴۸) — تنها منبع حقیقت برنامهٔ قطعی/پیشنهادی
+//
+// هر رکورد = یک جلسهٔ واقعی برای یک دانش‌پذیر: شروع و پایان به‌صورت «لحظهٔ
+// UTC» ذخیره می‌شود (بدون آفست هاردکد؛ DST با پایگاه IANA خود نود رعایت می‌شود).
+// نمایش ادمین همیشه به وقت تهران و نمایش مشتری به وقت خودش است — هر دو از
+// همان لحظهٔ UTC مشتق می‌شوند (تغییر روز در گذر نیمه‌شب خودکار درست است).
+//
+// وضعیت‌ها: PROPOSED (پیشنهاد ادمین) | CONFIRMED (تأییدشده) | RESCHEDULED
+//           (جابه‌جاشده — رکورد قبلی زنجیره) | CANCELLED | COMPLETED
+// زنجیرهٔ جابه‌جایی: رکورد جدید supersededById را به رکورد قبلی وصل می‌کند و
+// رکورد قبلی RESCHEDULED می‌شود — تاریخچه هرگز بازنویسی/حذف نمی‌شود.
+// ضد مسابقه: یکتایی (userId, classId, startAt) در سطح دیتابیس + تراکنش تعاملی
+// برای بررسی ظرفیت — SQLite نویسندهٔ واحد دارد؛ دو تأیید همزمان هرگز ظرفیت را
+// رد نمی‌کند (یکی با خطای BUSY/بازبینی شمارنده رد می‌شود → 409).
+// ---------------------------------------------------------------------------
+model ClassSchedule {
+  id          String      @id @default(cuid())
+  userId      String // دانش‌پذیر — از سشن سرور مشتق می‌شود، هرگز از بدنهٔ درخواست
+  user        User        @relation("ScheduleUser", fields: [userId], references: [id], onDelete: Cascade)
+  classId     String
+  class       CourseClass @relation(fields: [classId], references: [id], onDelete: Cascade)
+  orderRef    String? // پیوند سفارش (CT-XXXXXXXX) — اختیاری؛ زنجیرهٔ پرداخت ← برنامه
+  registrationId String? // پیوند ثبت‌نام مبدأ (اختیاری — زنجیرهٔ ثبت‌نام ← برنامه)
+  registration Registration? @relation(fields: [registrationId], references: [id], onDelete: SetNull)
+
+  // پنجرهٔ واقعی جلسه — لحظهٔ UTC؛ endAt = startAt + durationMin (سرور محاسبه می‌کند)
+  startAt     DateTime
+  endAt       DateTime
+  durationMin Int // اسنپ‌شات مدت جلسه از تنظیمات کلاس در لحظهٔ ثبت
+
+  // منشأ ورودی — منطقه/روز/ساعت اصلی که برنامه با آن ساخته شد (برای ممیزی)
+  timezone    String // IANA منطقهٔ ورودی (معمولاً منطقهٔ خود دانش‌پذیر)
+  inputDate   String? // «2025-01-20» تقویم منطقهٔ ورودی
+  inputTime   String? // «23:30» به وقت منطقهٔ ورودی
+  inputDay    String? // کلید روز در منطقهٔ ورودی (mon…sun) — ممکن است بعد از تبدیل عوض شود
+  note        String? // یادداشت ادمین
+
+  // وضعیت + مسئول تغییر
+  status      String      @default("PROPOSED") // PROPOSED | CONFIRMED | RESCHEDULED | CANCELLED | COMPLETED
+  createdBy   String      @default("admin") // admin | customer
+  confirmedAt DateTime?
+  confirmedBy String? // customer | admin
+  cancelledAt DateTime?
+  cancelledBy String? // admin | customer
+  cancelReason String?
+
+  // زنجیرهٔ جابه‌جایی — رکورد جدید به قبلی اشاره می‌کند
+  supersededById String?
+  supersededBy   ClassSchedule?  @relation("RescheduleChain", fields: [supersededById], references: [id], onDelete: SetNull)
+  successors     ClassSchedule[] @relation("RescheduleChain")
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  audits       ScheduleAudit[]
+  notifications ScheduleNotification[]
+
+  @@unique([userId, classId, startAt]) // ضد درج رکورد تکراری همان دانش‌پذیر/کلاس/زمان
+  @@index([status, startAt])
+  @@index([userId, status])
+  @@index([classId, status])
+  @@index([orderRef])
+}
+
+// 🧾 تاریخچهٔ تغییرات برنامه — برای هر انتقال وضعیت یک ردیف؛ هرگز حذف نمی‌شود
+model ScheduleAudit {
+  id         String   @id @default(cuid())
+  scheduleId String
+  schedule   ClassSchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  action     String // PROPOSED | CONFIRMED | RESCHEDULED | CANCELLED | COMPLETED
+  actor      String // admin | customer:<email>
+  detail     String   @default("") // JSON اسنپ‌شات قبل/بعد (بدون هیچ راز)
+  createdAt  DateTime @default(now())
+
+  @@index([scheduleId, createdAt])
+}
+
+// 🔔 هشدار درون‌حسابی برنامه — پیشنهاد/تأیید/جابه‌جایی/لغو برای دانش‌پذیر
+model ScheduleNotification {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  scheduleId String?
+  schedule   ClassSchedule? @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  kind       String // PROPOSED | CONFIRMED | RESCHEDULED | CANCELLED | REGISTRATION | ORDER_CREATED | ORDER_EXPIRED | ORDER_CANCELLED | PAYMENT_DETECTED | PAYMENT_CONFIRMED | PAYMENT_UNDERPAID
+  // 🗂️ فاز ۵۲ — این مدل تنها «سیستم اعلان درون‌حسابی» سایت است؛ از فاز ۵۲ به بعد
+  // علاوه بر برنامهٔ جلسات، رویدادهای حساب/سفارش/پرداخت هم همین‌جا ذخیره می‌شوند.
+  category  String   @default("schedule") // schedule | account | order | payment
+  orderRef  String? // CT-XXXXXXXX — پیوند سفارش مرتبط (برای اعلان‌های سفارش/پرداخت)
+  title      String
+  body       String
+  readAt     DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId, readAt])
+  @@index([userId, category, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// 💾 لاگ پشتیبان‌گیری دیتابیس (فاز ۵۲) — هر عملیات Backup یک ردیف
+// status: STARTED (شروع شد) → SUCCESS | FAILED
+// trigger: SCHEDULED (زمان‌بند خودکار) | MANUAL (دکمهٔ ادمین) | PRE_RESTORE (پشتیبان ایمنی قبل از Restore)
+// هیچ رازی (کلید/رمز/seed) در این جدول یا لاگ‌ها نوشته نمی‌شود.
+// ---------------------------------------------------------------------------
+model BackupLog {
+  id          String    @id @default(cuid())
+  filename    String // نام فایل پشتیبان (backup-<timestamp>-<trigger>.db)
+  filePath    String // مسیر مطلق روی سرور — هرگز URL عمومی نیست
+  sizeBytes   Int? // حجم فایل پس از اتمام موفق
+  status      String    @default("STARTED") // STARTED | SUCCESS | FAILED
+  trigger     String    @default("MANUAL") // SCHEDULED | MANUAL | PRE_RESTORE
+  startedAt   DateTime  @default(now())
+  completedAt DateTime?
+  durationMs  Int? // مدت اجرا — برای پایش سلامت
+  error       String? // پیام کوتاه خطا — بدون محتوای حساس دیتابیس
+
+  @@index([status, startedAt])
+  @@index([trigger, startedAt])
+}
+
+// ---------------------------------------------------------------------------
+// 🚨 لاگ خطای سمت سرور (فاز ۵۳ — بند ۱۲) — پایش خطاهای مهم اپلیکیشن
+// فقط «پیام امن» ذخیره می‌شود: هرگز رمز/توکن/کلید/stack کامل/محتوای حساس.
+// category: API | DATABASE | PAYMENT | ORDER | AUTH | BACKUP | RESTORE | SERVER | VALIDATION
+// ---------------------------------------------------------------------------
+model ErrorLog {
+  id         String   @id @default(cuid())
+  category   String // API | DATABASE | PAYMENT | ORDER | AUTH | BACKUP | RESTORE | SERVER | VALIDATION
+  message    String // پیام کوتاه و امن — بدون راز و بدون stack کامل
+  context    String   @default("") // JSON: path، method، routeKind — بدون PII اضافه
+  statusCode Int? // کد وضعیت HTTP در صورت وجود
+  refId      String? // شناسهٔ رکورد مرتبط (orderRef، backupId و…)
+  createdAt  DateTime @default(now())
+
+  @@index([category, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// 🧾 گزارش فعالیت ادمین (فاز ۵۳ — بند ۱۴) — append-oriented؛ رکوردها هرگز
+// ویرایش/حذف نمی‌شوند. هرگز راز/کلید/رمز در meta ذخیره نمی‌شود.
+// ---------------------------------------------------------------------------
+model AuditLog {
+  id         String   @id @default(cuid())
+  actor      String // نام کاربر ادمین (مثل admin) — بدون توکن
+  action     String // discount.create | discount.update | discount.archive | discount.restore | class.create | class.update | class.status | class.delete | order.cancel | registration.status | schedule.propose | wallet.save | wallet.remove | credentials.update | settings.update | backup.create | backup.restore | backup.settings
+  targetType String // discount | class | order | registration | schedule | wallet | settings | backup
+  targetId   String   @default("") // شناسه/کد/ref رکورد هدف
+  meta       String   @default("") // JSON متادیتای امن (قبل/بعد — بدون راز)
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([action, createdAt])
 }

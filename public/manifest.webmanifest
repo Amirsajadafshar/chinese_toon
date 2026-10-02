@@ -1,0 +1,51 @@
+{
+  "name": "Chinese Toon — Learn Chinese. Have Fun. Make Progress.",
+  "short_name": "Chinese Toon",
+  "description": "Learn Mandarin Chinese through animated content and practical, teacher-led classes.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#FFF7E8",
+  "theme_color": "#FFF7E8",
+  "categories": ["education", "lifestyle"],
+  "lang": "en",
+  "icons": [
+    {
+      "src": "/images/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/images/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/images/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Classes",
+      "url": "/#/classes",
+      "icons": [{ "src": "/images/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Learn",
+      "url": "/#/learn",
+      "icons": [{ "src": "/images/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Blog",
+      "url": "/#/blog",
+      "icons": [{ "src": "/images/icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}

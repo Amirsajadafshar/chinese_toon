@@ -3,6 +3,36 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* ===== Chinese Toon brand colors ===== */
+@theme {
+  --color-sage: #A8C9A0;
+  --color-sage-dark: #8DB585;
+  --color-sage-light: #C5DEC0;
+  --color-cream: #FFF7E8;
+  --color-cream-dark: #F5EDDA;
+  --color-brown: #5B5145;
+  --color-brown-light: #7A6F62;
+  --color-brown-dark: #3D352E;
+  --color-butter: #F3D98B;
+  --color-butter-light: #F7E5B0;
+  --color-peach: #E8B6A5;
+  --color-peach-light: #F0CFC3;
+  /* 🌿 رنگ‌های اختصاصی نشان برند (شاخهٔ درخت تُون) — فقط داخل لوگو استفاده می‌شوند */
+  --color-leaf: #64826A;
+  --color-leaf-dark: #4E6A55;
+  --color-rust: #A8502F;
+  --color-rust-dark: #8C3F22;
+  /* 🌊 رنگ‌های باندهای بخش‌ها (فاز ۱۹–۲۱) — توکن شدند تا دارک مود هم بتواند
+     همان نگاشت را داشته باشد؛ مقادیر روشن دقیقاً همان hexهای قبلی‌اند */
+  --color-sec-sage: #E9F1E5; /* سبز روشن */
+  --color-sec-butter: #FAF0D8; /* کره‌ای */
+  --color-sec-peach: #F7E6DE; /* هلویی */
+  --color-sec-leaf: #DFECDA; /* سبز پاستلی */
+  --color-sec-sand: #F5EDDA; /* کرم تیره (همان cream-dark) */
+  --color-sec-foam: #FBF7EE; /* کرم سپید */
+  --font-poppins: var(--font-poppins), sans-serif;
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -112,6 +142,43 @@
   --sidebar-ring: oklch(0.556 0 0);
 }
 
+
+/* =====================================================================
+   🌙 شبِ گرم (Dark Mode) — فاز ۲۲
+   نگاشت ۱:۱ همان پالت برند: کاغذها تیرهٔ گرم می‌شوند، مرکب‌ها روشن،
+   لهجه‌های سبز/کره‌ای/هلویی به تُن‌های شبانهٔ خودشان می‌روند.
+   چون ابزارهای Tailwind v4 به var(--color-*) اشاره می‌کنند، فقط همین
+   بلوک کافی است تا کل سایت (صفحه‌ها + پنل) تاریک شود.
+   ===================================================================== */
+.dark {
+  /* کاغذ و مرکب */
+  --color-cream: #241d16; /* زمینهٔ بدنه — قهوه‌ای تیرهٔ گرم */
+  --color-cream-dark: #2c241c;
+  --color-white: #2e2620; /* کارت‌ها */
+  --color-brown: #cbbba4; /* متن اصلی */
+  --color-brown-light: #a6957e;
+  --color-brown-dark: #f0e7d6; /* تیترها */
+  /* لهجه‌ها */
+  --color-sage: #5f8256; /* زمینهٔ دکمه‌ها — سبز شبانه */
+  --color-sage-dark: #a9cc9e; /* لهجهٔ متنی — سبز روشن */
+  --color-sage-light: #3e4a37; /* چیپ‌ها و حاشیه‌ها */
+  --color-butter: #d9b968; /* طلایی */
+  --color-butter-light: #3a3122;
+  --color-peach: #c98f7d;
+  --color-peach-light: #40302a;
+  --color-leaf: #7fa374;
+  --color-leaf-dark: #55754b;
+  --color-rust: #c97a54;
+  --color-rust-dark: #d89a76;
+  /* باندهای بخش‌ها — تُن‌های شبانهٔ همان رنگ‌ها */
+  --color-sec-sage: #252e23;
+  --color-sec-butter: #2f2a1d;
+  --color-sec-peach: #332722;
+  --color-sec-leaf: #232c21;
+  --color-sec-sand: #2c261b;
+  --color-sec-foam: #26211a;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -120,3 +187,647 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* ===== Chinese Toon custom styles ===== */
+html {
+  scroll-behavior: smooth;
+}
+
+.ct-body {
+  background-color: var(--color-cream);
+  color: var(--color-brown);
+}
+
+.ct-body ::selection {
+  background: var(--color-sage);
+  color: var(--color-brown-dark);
+}
+
+/* ⌨️ فوکوس برندشدهٔ سراسری — همهٔ عناصر تعاملی با Tab حلقهٔ سبز مرئی دارند.
+   جاهایی که ring اختصاصی داریم، با focus-visible:outline-none خنثی شده است. */
+.ct-body :focus-visible {
+  outline: 2px solid #8FB886;
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+.ct-body :focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Scrollbar */
+.ct-body ::-webkit-scrollbar {
+  width: 8px;
+}
+.ct-body ::-webkit-scrollbar-track {
+  background: var(--color-cream);
+}
+.ct-body ::-webkit-scrollbar-thumb {
+  background: var(--color-sage-light);
+  border-radius: 10px;
+}
+.ct-body ::-webkit-scrollbar-thumb:hover {
+  background: var(--color-sage);
+}
+
+/* Animations */
+@keyframes ct-fadeInUp {
+  from { opacity: 0; transform: translateY(24px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes ct-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+@keyframes ct-floatSlow {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-6px) rotate(2deg); }
+}
+@keyframes ct-wiggle {
+  0%, 100% { transform: rotate(-1deg); }
+  50% { transform: rotate(1deg); }
+}
+@keyframes ct-pop {
+  0% { opacity: 0; transform: scale(0.85); }
+  60% { transform: scale(1.04); }
+  100% { opacity: 1; transform: scale(1); }
+}
+/* 🌿 تاب‌خوردن ملایم برگ‌های نشان برند — حول پایهٔ هر شاخه */
+@keyframes ct-sway {
+  0%, 100% { transform: rotate(-1.2deg); }
+  50% { transform: rotate(1.4deg); }
+}
+@keyframes ct-sway-soft {
+  0%, 100% { transform: rotate(0.8deg) translateY(0); }
+  50% { transform: rotate(-1deg) translateY(-3px); }
+}
+/* ☁️ رانش آرام ابرها و عناصر آسمان در تصویرسازی تمام‌عرض هیرو */
+@keyframes ct-drift {
+  0%, 100% { transform: translateX(0); }
+  50% { transform: translateX(26px); }
+}
+.animate-ct-drift { animation: ct-drift 26s ease-in-out infinite; }
+
+/* 🌊 موج متحرک جداکنندهٔ بخش‌ها — لایهٔ محو زیر لبهٔ موج آرام چپ‌وراست می‌رود
+   (transform در SVG = واحدهای viewBox؛ در موبایل خودکار کم‌دامن‌تر می‌شود) */
+@keyframes ct-divider-sway {
+  0%, 100% { transform: translateX(-16px); }
+  50% { transform: translateX(16px); }
+}
+.ct-divider-echo { animation: ct-divider-sway 11s ease-in-out infinite; }
+
+.animate-ct-fadeInUp { animation: ct-fadeInUp 0.7s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+.animate-ct-float { animation: ct-float 4s ease-in-out infinite; }
+.animate-ct-floatSlow { animation: ct-floatSlow 6s ease-in-out infinite; }
+.animate-ct-wiggle { animation: ct-wiggle 3s ease-in-out infinite; }
+.animate-ct-pop { animation: ct-pop 0.5s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+.animate-ct-sway { animation: ct-sway 5.5s ease-in-out infinite; transform-origin: 50% 95%; }
+.animate-ct-sway-soft { animation: ct-sway-soft 7s ease-in-out infinite; transform-origin: 50% 50%; }
+.delay-100 { animation-delay: 100ms; }
+.delay-200 { animation-delay: 200ms; }
+.delay-300 { animation-delay: 300ms; }
+.delay-400 { animation-delay: 400ms; }
+.delay-500 { animation-delay: 500ms; }
+
+/* Scroll reveal */
+.scroll-animate {
+  opacity: 0;
+  transform: translateY(24px);
+  transition: all 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.scroll-animate.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Speech bubble */
+.speech-bubble {
+  position: relative;
+  background: var(--color-white);
+  border-radius: 16px;
+  padding: 12px 18px;
+  box-shadow: 0 2px 12px rgba(91, 81, 69, 0.08);
+}
+.speech-bubble::after {
+  content: '';
+  position: absolute;
+  bottom: -8px;
+  left: 20px;
+  width: 0;
+  height: 0;
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+  border-top: 8px solid var(--color-white);
+}
+.speech-bubble-right::after {
+  left: auto;
+  right: 20px;
+}
+
+/* Decorative giant Chinese character background */
+.char-bg {
+  position: absolute;
+  font-weight: 700;
+  color: rgba(168, 201, 160, 0.06);
+  line-height: 1;
+  pointer-events: none;
+  user-select: none;
+}
+.dark .char-bg {
+  /* شب: کمی پررنگ‌تر تا روی زمینهٔ تیره دیده شود */
+  color: rgba(168, 201, 160, 0.1);
+}
+
+/* Hover cards */
+.card-hover {
+  transition: all 0.3s ease;
+}
+.card-hover:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 40px rgba(91, 81, 69, 0.1);
+}
+
+.vocab-card {
+  background: var(--color-white);
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: 0 4px 20px rgba(91, 81, 69, 0.08);
+  transition: all 0.3s ease;
+}
+.vocab-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 30px rgba(91, 81, 69, 0.12);
+}
+
+/* Filter buttons */
+.filter-btn {
+  transition: all 0.2s ease;
+}
+.filter-btn.active {
+  background-color: var(--color-sage) !important;
+  color: var(--color-brown-dark) !important;
+}
+
+/* Toast */
+.ct-toast {
+  position: fixed;
+  top: 100px;
+  right: 24px;
+  z-index: 9999;
+  transform: translateX(120%);
+  transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.ct-toast.show {
+  transform: translateX(0);
+}
+
+/* Nav active link */
+.nav-link.active-link {
+  color: var(--color-brown-dark) !important;
+  font-weight: 600;
+}
+
+/* Mobile menu slide */
+.mobile-menu {
+  transform: translateX(100%);
+  transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.mobile-menu.open {
+  transform: translateX(0);
+}
+
+/* ===== میکرواینتراکشن‌ها و جلوه‌های ظریف ===== */
+
+/* هاور underline انیمیشنی برای لینک‌های ناوبری دسکتاپ */
+.nav-link {
+  position: relative;
+}
+.nav-link::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -6px;
+  width: 0;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--color-sage-dark);
+  transform: translateX(-50%);
+  transition: width 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.nav-link:hover::after,
+.nav-link.active-link::after {
+  width: 100%;
+}
+
+/* آیکون کارت‌ها هنگام هاور بزرگ و بچرخد کمی */
+.card-hover .rounded-2xl.flex.items-center.justify-center,
+.learn-card .h-44 {
+  transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.card-hover:hover > .rounded-2xl.flex.items-center.justify-center {
+  transform: scale(1.05) rotate(-2deg);
+}
+.learn-card:hover .h-44 {
+  transform: scale(1.02);
+}
+
+/* 🌊 هاور موجی کارت‌ها — یک موج محوِ سیج از پایین کارت بالا می‌آید (فاز ۲۲)
+   کنار card-hover استفاده شود؛ overflow-hidden + position لازم است */
+.card-wave {
+  position: relative;
+  overflow: hidden;
+}
+.card-wave::after {
+  content: '';
+  position: absolute;
+  left: -8%;
+  right: -8%;
+  bottom: -12%;
+  height: 46%;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 220 56' preserveAspectRatio='none'%3E%3Cpath d='M0 56 L0 32 C 38 12 76 7 112 17 C 150 27 186 23 220 9 L220 56 Z' fill='%23A8C9A0'/%3E%3C/svg%3E");
+  background-size: 100% 100%;
+  opacity: 0;
+  transform: translateY(52%);
+  transition: transform 0.55s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.55s ease;
+  pointer-events: none;
+}
+.card-wave:hover::after,
+.card-wave:focus-within::after {
+  opacity: 0.16;
+  transform: translateY(0);
+}
+
+/* دکمه‌ها: lift ظریف */
+.btn-lift {
+  transition: all 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.btn-lift:hover {
+  transform: translateY(-2px);
+}
+.btn-lift:active {
+  transform: translateY(0);
+}
+
+/* فوکوس کیبورد واضح و هماهنگ با برند */
+:focus-visible {
+  outline: 2px solid #8DB585;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* تصاویر و SVGها انتخاب‌نشده و روان */
+svg {
+  max-width: 100%;
+}
+
+/* اسکرول‌بار باریک‌تر برای پنل ادمین و بخش‌های اسکرولی */
+.max-h-\[65vh\]::-webkit-scrollbar,
+.max-h-\[60vh\]::-webkit-scrollbar {
+  width: 6px;
+}
+
+/* اسکرول‌بار برند — مودال پروفایل استاد و هر ظرف با کلاس ct-scrollbar */
+.ct-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(168, 201, 160, 0.7) transparent;
+}
+.ct-scrollbar::-webkit-scrollbar {
+  width: 7px;
+}
+.ct-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.ct-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(168, 201, 160, 0.6);
+  border-radius: 999px;
+}
+.ct-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(140, 180, 130, 0.8);
+}
+
+/* کاهش حرکت برای کاربران حساس به انیمیشن */
+@media (prefers-reduced-motion: reduce) {
+  .animate-ct-fadeInUp,
+  .animate-ct-float,
+  .animate-ct-floatSlow,
+  .animate-ct-wiggle,
+  .animate-ct-pop,
+  .animate-ct-sway,
+  .animate-ct-sway-soft,
+  .animate-ct-drift,
+  .ct-divider-echo {
+    animation: none;
+  }
+  .scroll-animate {
+    transition: none;
+    opacity: 1;
+    transform: none;
+  }
+  .nav-link::after {
+    transition: none;
+  }
+}
+
+/* ===== Phase 4: flashcards + FAQ votes ===== */
+/* بخش چرخش کارت فلش و رأی FAQ (ویرایش: force reload) */
+
+/* 🃏 کارت فلش ۳بعدی — صحنه (پرسپکتیو) + لایهٔ چرخان + دو رو */
+
+/* صحنه: فضای پرسپکتیو برای عمق واقعی چرخش */
+.ct-flip-scene {
+  perspective: 1400px;
+}
+
+/* خود کارت: ناحیهٔ کلیک/کیبورد */
+.ct-flip-card {
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* لایهٔ داخلی که می‌چرخد؛ preserve-3d شرط چرخش واقعی دو رو است */
+.ct-flip-inner {
+  position: relative;
+  transform-style: preserve-3d;
+  transition: transform 0.65s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* حالت چرخیده — کلاس is-flipped با کلیک/کیبورد اضافه می‌شود */
+.ct-flip-card.is-flipped .ct-flip-inner {
+  transform: rotateY(180deg);
+}
+
+/* روی هر رو: پشت کارت در حین چرخش نامرئی شود */
+.ct-flip-face {
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+/* روِ پشتی: از پیش ۱۸۰ درجه چرخیده و روی پشتیِ روی اول قرار می‌گیرد */
+.ct-flip-face-back {
+  position: absolute;
+  inset: 0;
+  transform: rotateY(180deg);
+}
+
+/* ⭐ رأی FAQ: انیمیشن pop کوچک هنگام کلیک روی آیکون */
+@keyframes ct-pop-sm {
+  0% { transform: scale(0.6); opacity: 0.4; }
+  60% { transform: scale(1.25); }
+  100% { transform: scale(1); opacity: 1; }
+}
+.animate-ct-pop-sm {
+  animation: ct-pop-sm 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* کاهش حرکت: چرخش کارت و pop بی‌انیمیشن می‌شود (محتوا فوراً عوض می‌شود) */
+@media (prefers-reduced-motion: reduce) {
+  .ct-flip-inner {
+    transition: none;
+  }
+  .animate-ct-pop-sm {
+    animation: none;
+  }
+  .card-wave::after {
+    transition: none;
+  }
+}
+
+/* ===== Phase 7: tone-colored pinyin + word of the day (rebuild) ===== */
+/* 🎨 رنگ تُن‌های پین‌یین — هماهنگ با پالت برند (استفاده در فلش‌کارت‌ها و کلمهٔ روز)
+   تُن ۱ هموار=تراکوتا · تُن ۲ بالارونده=سبز سِیج · تُن ۳ مارپیچ=قهوه‌ای تیره
+   تُن ۴ نزولی=خردلی · تُن خنثی=خاکستری گرم */
+
+.ct-tone-1 { color: #C0563F; }
+.ct-tone-2 { color: #5F8B57; }
+.ct-tone-3 { color: #3D352E; }
+.ct-tone-4 { color: #A97F1F; }
+.ct-tone-0 { color: #9C8F80; }
+
+/* 📅 کلمهٔ روز: ورود نرم کارت هنگام تعویض کلمه */
+@keyframes ct-wod-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.animate-ct-wod-in {
+  animation: ct-wod-in 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-ct-wod-in {
+    animation: none;
+  }
+}
+
+/* ===== Phase 9: page transition + teachers section (brand-consistent) ===== */
+
+/* 🎬 ترنزیشن نرم بین صفحات SPA — چون همهٔ صفحه‌ها mounted می‌مانند و
+   فقط display عوض می‌شود، انیمیشن هنگام برگشتن از display:none خودش ری‌استارت می‌شود */
+@keyframes ct-page-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.995);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.ct-page-view {
+  /* backwards (نه both): بعد از پایان انیمیشن transform پاک می‌شود —
+     وگرنه transform باقی‌مانده (حتی scale(1)) مبنای position:fixed فرزندان
+     می‌شود و المان‌های fixed (مثل لایت‌باکس) جا به جا رندر می‌شوند */
+  animation: ct-page-in 0.45s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ct-page-view {
+    animation: none;
+  }
+}
+
+/* ===== Phase 11: announcement bar + tone trainer ===== */
+
+/* 🔊 ضربان نرم دکمهٔ پخش صدا */
+@keyframes ct-play-pulse {
+  0%, 100% {
+    box-shadow: 0 8px 24px rgba(168, 201, 160, 0.45), 0 0 0 0 rgba(168, 201, 160, 0.5);
+  }
+  50% {
+    box-shadow: 0 8px 24px rgba(168, 201, 160, 0.45), 0 0 0 12px rgba(168, 201, 160, 0);
+  }
+}
+.ct-play-btn {
+  animation: ct-play-pulse 2.2s ease-out infinite;
+}
+
+/* ❌ لرزش کوتاه پاسخ اشتباه */
+@keyframes ct-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-4px); }
+  75% { transform: translateX(4px); }
+}
+.ct-shake {
+  animation: ct-shake 0.3s ease-in-out;
+}
+
+/* ✅ ورود نرم بازخورد و دکمهٔ بعدی */
+@keyframes ct-feedback-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.ct-feedback {
+  animation: ct-feedback-in 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ct-play-btn { animation: none; }
+  .ct-shake { animation: none; }
+  .ct-feedback { animation: none; }
+}
+
+/* 📣 ورود نرم نوار اعلان (سر می‌خورد پایین) */
+@keyframes ct-announce-in {
+  from {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+.ct-announce {
+  animation: ct-announce-in 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ct-announce { animation: none; }
+}
+
+/* 🔔 فلاش تب مقصد بعد از کلیک «بررسی همین حالا» — دو نبض حلقهٔ هلو دور تب فعال */
+@keyframes ct-tab-flash {
+  0% {
+    box-shadow: 0 0 0 0 rgba(232, 182, 165, 0);
+  }
+  35% {
+    box-shadow: 0 0 0 7px rgba(232, 182, 165, 0.55);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(232, 182, 165, 0);
+  }
+}
+.ct-tab-flash {
+  animation: ct-tab-flash 0.9s ease-out 2;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ct-tab-flash { animation: none; }
+}
+
+/* اسکرول افقی ناوبری بخش‌ها — بدون اسکرول‌بار، با کشیدن */
+.ct-scroll-x {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.ct-scroll-x::-webkit-scrollbar {
+  display: none;
+}
+
+/* ===== فاز ۱۹: تنوع بصری بخش‌های صفحهٔ خانه ===== */
+
+/* 🫧 الگوی نقطه‌ای محو — تزئین پس‌زمینهٔ بخش‌ها (polka dots با رنگ سیج) */
+.ct-dots {
+  background-image: radial-gradient(rgba(168, 201, 160, 0.4) 1.6px, transparent 1.6px);
+  background-size: 22px 22px;
+}
+.ct-dots-warm {
+  background-image: radial-gradient(rgba(232, 182, 165, 0.4) 1.6px, transparent 1.6px);
+  background-size: 24px 24px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ct-dots,
+  .ct-dots-warm {
+    /* الگوها ثابت‌اند؛ فقط برای هم‌خوانی بلوک‌ها اینجا خالی است */
+  }
+}
+
+/* ===== فاز ۲۲: نسخهٔ چاپی (Print/PDF) ===== */
+/* 🖨️ چاپ تمیز برنامهٔ کلاس‌ها: سربرگ‌ها/تزئینات حذف، زمینهٔ سفید، کارت‌های نشکن */
+@media print {
+  @page {
+    margin: 14mm;
+  }
+  header,
+  footer,
+  .no-print,
+  .ct-divider,
+  .char-bg,
+  .ct-dots,
+  .ct-dots-warm,
+  .ct-toast,
+  .ct-announce {
+    display: none !important;
+  }
+  html,
+  body,
+  .ct-body {
+    background: #ffffff !important;
+    color: #1f1c18 !important;
+  }
+  section,
+  div,
+  article {
+    background: transparent !important;
+    background-image: none !important;
+    box-shadow: none !important;
+  }
+  /* عناصری که با اسکرول ظاهر می‌شوند در چاپ نباید نامرئی بمانند */
+  .scroll-animate {
+    opacity: 1 !important;
+    transform: none !important;
+    transition: none !important;
+  }
+  .animate-ct-fadeInUp {
+    animation: none !important;
+    opacity: 1 !important;
+  }
+  /* برنامهٔ کلاس‌ها: دو ستون فشرده و کارت‌های نشکن */
+  #page-classes .grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 12px !important;
+  }
+  .class-card,
+  .vocab-card,
+  .card-hover {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    border: 1px solid #d4d0c8 !important;
+  }
+  a {
+    text-decoration: none !important;
+    color: inherit !important;
+  }
+  /* 🖨️ مقالهٔ بلاگ — کارت بدون سایه/حاشیه، متن تیره و نشکن */
+  #page-blog .ct-article-card {
+    border: none !important;
+    padding: 0 !important;
+  }
+  #page-blog .ct-article-paragraph,
+  #page-blog .ct-article-heading {
+    color: #1f1c18 !important;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  #page-blog .ct-article-card h1,
+  #page-blog .ct-article-card p {
+    color: #1f1c18 !important;
+  }
+}
+
+/* css touch 1789386722 */
