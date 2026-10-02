@@ -95,3 +95,26 @@ Stage Summary:
 - Single source of truth (siteContent.contact.siteUrl) feeds sitemap + robots + metadataBase + JSON-LD — no future www/non-www drift possible.
 - Compatible with Next.js 16.1.3 App Router native Metadata API; works on Vercel (both routes are static ○ prerendered at build time).
 - Long-term SEO recommendation (out of scope per user constraint): convert hash routes to real App Router routes (/classes, /learn, /blog/[slug]) so each public view becomes independently indexable.
+
+---
+Task ID: SOCIAL-LINKS
+Agent: Z.ai Code (main) — social/contact icon wiring
+Task: Connect existing Instagram, WeChat, Telegram, Email icons to exact destination URLs
+
+Work Log:
+- Inspected Chinese Toon (/home/z/ct-audit/) for all social/contact icon usages. Found icons in: Footer.tsx, AboutPage.tsx, LearnPage.tsx, SupportPage.tsx (quickContact channels), and layout.tsx (JSON-LD sameAs).
+- Found architecture: siteContent.contact.socials stored HANDLES (e.g. "chinese_toon"), and consumers built URLs at render (https://instagram.com/${handle}). But user's exact URLs can't be derived from handles (Instagram ?stkn= param, WeChat u.wechat.com short link). Refactored to store full URLs.
+- Changes:
+  • site-content.ts: contact.email → chinese.toon.org@gmail.com; socials.instagram/telegram/wechat → full exact URLs (with ?stkn= and u.wechat.com); quickContact.channels links+values updated to match.
+  • Footer.tsx: all 4 icons use siteContent.contact.socials.* directly; WeChat converted from non-clickable <span> to <a target=_blank> with IDENTICAL classes+icon.
+  • AboutPage.tsx: Instagram/Telegram use URLs directly; WeChat <span> → <a>; email mailto already used contact.email (auto-updated).
+  • LearnPage.tsx: Instagram/Telegram use URLs directly.
+  • layout.tsx: JSON-LD sameAs uses full URLs directly.
+- VERIFICATION: bun run lint ✓ (0 errors); bun run build ✓ (13.8s). Dev server + agent-browser on /#/about, /#/learn, /#/support: every icon verified to have correct href + target=_blank (for external) / mailto (for email). Visual design confirmed unchanged: all 4 footer icons have identical classes (w-10 h-10 bg-cream/10 rounded-xl), same SVG sizes, same gap-3 container. No console errors.
+
+Stage Summary:
+- Instagram → https://www.instagram.com/chinese_toon?stkn=ZXUzOGtzeDZuYWM3 (Footer, About, Learn, Support, JSON-LD)
+- Telegram → https://t.me/Chinese_toon_support (Footer, About, Learn, Support, JSON-LD)
+- WeChat → https://u.wechat.com/kIy5ADbROlbIgMxEWkk0jZQ?s=3 (Footer, About — converted from non-clickable span to clickable anchor)
+- Email → mailto:chinese.toon.org@gmail.com (Footer, About ×2, Support)
+- All external links open in new tab (target=_blank rel=noopener noreferrer). Email opens via mailto. Zero placeholder/broken URLs remaining. Visual design 100% preserved.
