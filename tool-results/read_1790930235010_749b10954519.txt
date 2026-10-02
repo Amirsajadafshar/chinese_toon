@@ -1,0 +1,1099 @@
+     1→'use client'
+     2→
+     3→// ---------------------------------------------------------------------------
+     4→// 📋 تب مدیریت پرداخت‌ها (فاز ۵۹) — رسیدهای آپلودشده + تأیید/ردّ دستی
+     5→//
+     6→// • فهرست صفحه‌بندی‌شده: GET /api/admin/payments?status=…&q=…&page=…
+     7→// • جزئیات کامل: GET /api/admin/payments/[ref] (+ رویدادهای ممیزی)
+     8→// • تأیید: POST /api/admin/payments/[ref]/approve  (فقط از RECEIPT_SUBMITTED)
+     9→// • ردّ:   POST /api/admin/payments/[ref]/reject   (دلیل ۳–۵۰۰ نویسه اجباری)
+    10→// • لغو سفارش PENDING: PATCH /api/payments/orders/[ref] { action:'cancel' }
+    11→// • رسیدها با هدر x-admin-key واکشی و به Object URL تبدیل می‌شوند — توکن ادمین
+    12→//   کوکی نیست، پس <img src=…> مستقیم کار نمی‌کند؛ Object URL با بستن دیالوگ
+    13→//   revoke می‌شود.
+    14→// ---------------------------------------------------------------------------
+    15→
+    16→import { useCallback, useEffect, useRef, useState } from 'react'
+    17→import {
+    18→  CheckCircle2,
+    19→  Clock,
+    20→  ExternalLink,
+    21→  FileText,
+    22→  Hourglass,
+    23→  Landmark,
+    24→  Loader2,
+    25→  ReceiptText,
+    26→  SearchX,
+    27→  User,
+    28→  XCircle,
+    29→} from 'lucide-react'
+    30→import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+    31→import { siteContent } from '@/content/site-content'
+    32→
+    33→const a = siteContent.admin
+    34→const pa = a.payAdmin
+    35→
+    36→const PAGE_SIZE = 25
+    37→
+    38→const inputCls =
+    39→  'w-full bg-white border border-sage-light/40 rounded-xl px-3.5 py-2.5 text-sm text-brown-dark placeholder:text-brown-light/60 focus:outline-none focus:ring-2 focus:ring-sage/40 focus:border-sage transition-colors'
+    40→
+    41→export interface PayCounts {
+    42→  pendingReview: number
+    43→  approved: number
+    44→  rejected: number
+    45→  unpaid: number
+    46→  cancelled: number
+    47→}
+    48→
+    49→interface PayCustomer {
+    50→  id: string | null
+    51→  name: string
+    52→  email: string
+    53→  phone: string | null
+    54→  country: string | null
+    55→}
+    56→
+    57→interface PayOrderRow {
+    58→  ref: string
+    59→  status: string
+    60→  rawStatus: string
+    61→  paymentMethod: string
+    62→  productTitle: string
+    63→  productId: string
+    64→  amountUsd: string
+    65→  currency: string
+    66→  baseAmount: number | null
+    67→  tierPercent: number | null
+    68→  discountCode: string | null
+    69→  discountAmount: number | null
+    70→  discountType: string | null
+    71→  discountValue: number | null
+    72→  receiptStatus: string | null
+    73→  receiptSubmittedAt: string | null
+    74→  receiptResubmits: number
+    75→  rejectionReason: string | null
+    76→  reviewedAt: string | null
+    77→  reviewedBy: string | null
+    78→  paidAt: string | null
+    79→  createdAt: string
+    80→  updatedAt: string
+    81→  expiresAt: string
+    82→  customer: PayCustomer
+    83→}
+    84→
+    85→interface PayListData {
+    86→  total: number
+    87→  page: number
+    88→  pageSize: number
+    89→  counts: PayCounts
+    90→  orders: PayOrderRow[]
+    91→}
+    92→
+    93→interface PayDetailClass {
+    94→  id: string
+    95→  slug: string
+    96→  title: string
+    97→  level: string
+    98→  classType: string
+    99→  format: string | null
+   100→  schedule: string | null
+   101→  packageSessions: number | null
+   102→  sessionDurationMin: number | null
+   103→  pricePerSession: number | null
+   104→  packagePrice: number | null
+   105→}
+   106→
+   107→interface PayDetailData {
+   108→  order: PayOrderRow & {
+   109→    receiptUrl: string | null
+   110→    receiptFileName: string | null
+   111→    receiptMime: string | null
+   112→    receiptSize: number | null
+   113→    legacy: { network: string; paymentMode: string; paymentAddress: string; txHash: string | null } | null
+   114→  }
+   115→  customer: PayCustomer & {
+   116→    countryCode?: string | null
+   117→    telegramUsername?: string | null
+   118→    memberSince?: string | null
+   119→    lastLoginAt?: string | null
+   120→  }
+   121→  class: PayDetailClass | null
+   122→  events: { id: string; kind: string; txHash: string | null; detail: string; createdAt: string }[]
+   123→}
+   124→
+   125→// 🏷️ بَج وضعیت — هماهنگ با پالت برند (sage/peach/butter)
+   126→function statusBadge(s: string): { label: string; cls: string } {
+   127→  switch (s) {
+   128→    case 'PAID':
+   129→      return { label: a.statusPaid, cls: 'bg-green-100 text-green-800 border border-green-200' }
+   130→    case 'RECEIPT_SUBMITTED':
+   131→      return { label: a.statusReceiptSubmitted, cls: 'bg-sage-light/40 text-sage-dark border border-sage/40' }
+   132→    case 'REJECTED':
+   133→      return { label: a.statusRejected, cls: 'bg-peach-light/70 text-brown-dark border border-peach/50' }
+   134→    case 'PENDING':
+   135→      return { label: a.statusPending, cls: 'bg-amber-100 text-amber-800 border border-amber-200' }
+   136→    case 'UNDERPAID':
+   137→      return { label: a.statusUnderpaid, cls: 'bg-orange-100 text-orange-800 border border-orange-200' }
+   138→    case 'DETECTED':
+   139→      return { label: a.ordersM.payDetected, cls: 'bg-butter text-brown border border-peach/40' }
+   140→    case 'EXPIRED':
+   141→      return { label: a.statusExpired, cls: 'bg-red-100/70 text-red-700/90 border border-red-200/70' }
+   142→    case 'CANCELLED':
+   143→      return { label: a.statusCancelled, cls: 'bg-gray-100 text-gray-600 border border-gray-200' }
+   144→    default:
+   145→      return { label: s, cls: 'bg-neutral-100 text-brown-light border border-neutral-200' }
+   146→  }
+   147→}
+   148→
+   149→function methodLabel(paymentMethod: string): string {
+   150→  return paymentMethod === 'MANUAL_BANK_CARD' ? 'Manual Bank Card' : 'Legacy USDT'
+   151→}
+   152→
+   153→// 💰 نمایش مبلغ — همیشه «$X.XX USD»؛ مقدار ناموجود = —
+   154→function fmtUsd(v: string | number | null | undefined): string {
+   155→  if (v === null || v === undefined || v === '') return '—'
+   156→  const n = Number(v)
+   157→  return Number.isFinite(n) ? `$${n.toFixed(2)} USD` : '—'
+   158→}
+   159→
+   160→function fmtDateTime(iso: string | null | undefined): string {
+   161→  if (!iso) return '—'
+   162→  const d = new Date(iso)
+   163→  if (Number.isNaN(d.getTime())) return '—'
+   164→  return `${d.toLocaleDateString()} ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+   165→}
+   166→
+   167→function fmtDate(iso: string | null | undefined): string {
+   168→  if (!iso) return '—'
+   169→  const d = new Date(iso)
+   170→  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString()
+   171→}
+   172→
+   173→// 🔎 خط یک‌سطره برای جزئیات رویداد ممیزی (JSON زیبا/فشرده — حداکثر ~۱۴۰ نویسه)
+   174→function eventDetailLine(raw: string): string {
+   175→  let s = raw
+   176→  try {
+   177→    const v = JSON.parse(raw)
+   178→    s = typeof v === 'string' ? v : JSON.stringify(v)
+   179→  } catch {
+   180→    /* خام نگه داشته می‌شود */
+   181→  }
+   182→  return s.length > 140 ? `${s.slice(0, 140)}…` : s
+   183→}
+   184→
+   185→const FILTERS: { key: string; label: string; countKey?: keyof PayCounts }[] = [
+   186→  { key: 'all', label: pa.filterAll },
+   187→  { key: 'unpaid', label: pa.filterUnpaid, countKey: 'unpaid' },
+   188→  { key: 'receipt_submitted', label: pa.filterReceipt, countKey: 'pendingReview' },
+   189→  { key: 'approved', label: pa.filterApproved, countKey: 'approved' },
+   190→  { key: 'rejected', label: pa.filterRejected, countKey: 'rejected' },
+   191→  { key: 'cancelled', label: pa.filterCancelled, countKey: 'cancelled' },
+   192→  { key: 'expired', label: pa.filterExpired },
+   193→  { key: 'legacy', label: pa.filterLegacy },
+   194→]
+   195→
+   196→export function PaymentsAdminTab({
+   197→  token,
+   198→  onToast,
+   199→  initialFilter,
+   200→  onCounts,
+   201→  onChanged,
+   202→}: {
+   203→  token: string
+   204→  onToast?: (msg: string) => void
+   205→  initialFilter?: string
+   206→  onCounts?: (c: PayCounts) => void
+   207→  onChanged?: () => void
+   208→}) {
+   209→  // ----- فهرست -----
+   210→  const [filter, setFilter] = useState(initialFilter && initialFilter.trim() !== '' ? initialFilter : 'receipt_submitted')
+   211→  const [query, setQuery] = useState('')
+   212→  const [debouncedQ, setDebouncedQ] = useState('')
+   213→  const [page, setPage] = useState(1)
+   214→  const [data, setData] = useState<PayListData | null>(null)
+   215→  const [listLoading, setListLoading] = useState(true)
+   216→  const [listError, setListError] = useState(false)
+   217→
+   218→  // کال‌بک‌های والد در ref نگه داشته می‌شوند تا شناسه‌شان حلقهٔ واکشی نسازد
+   219→  const cbRef = useRef({ onCounts, onChanged })
+   220→  useEffect(() => {
+   221→    cbRef.current = { onCounts, onChanged }
+   222→  })
+   223→
+   224→  // debounce جست‌وجو (۳۰۰ms)
+   225→  useEffect(() => {
+   226→    const t = setTimeout(() => setDebouncedQ(query.trim()), 300)
+   227→    return () => clearTimeout(t)
+   228→  }, [query])
+   229→
+   230→  // الگوی رسمی ریکت: بازگشت به صفحهٔ ۱ با تغییر فیلتر/جست‌وجو (بدون setState داخل effect)
+   231→  const [prevListKey, setPrevListKey] = useState('')
+   232→  const listKey = `${filter}|${debouncedQ}`
+   233→  if (prevListKey !== listKey) {
+   234→    setPrevListKey(listKey)
+   235→    setPage(1)
+   236→  }
+   237→
+   238→  // سینک فیلتر با پراپ (باز شدن تب از داشبورد با فیلتر مقصد)
+   239→  useEffect(() => {
+   240→    if (typeof initialFilter === 'string' && initialFilter !== '') {
+   241→      setFilter(initialFilter)
+   242→    }
+   243→  }, [initialFilter])
+   244→
+   245→  const loadList = useCallback(async () => {
+   246→    setListLoading(true)
+   247→    setListError(false)
+   248→    try {
+   249→      const params = new URLSearchParams({ status: filter, page: String(page), pageSize: String(PAGE_SIZE) })
+   250→      if (debouncedQ) params.set('q', debouncedQ)
+   251→      const res = await fetch(`/api/admin/payments?${params.toString()}`, {
+   252→        headers: { 'x-admin-key': token },
+   253→        cache: 'no-store',
+   254→      })
+   255→      if (!res.ok) {
+   256→        setListError(true)
+   257→        setData(null)
+   258→        return
+   259→      }
+   260→      const d = (await res.json()) as PayListData
+   261→      setData(d)
+   262→      if (d.counts) cbRef.current.onCounts?.(d.counts)
+   263→    } catch {
+   264→      setListError(true)
+   265→      setData(null)
+   266→    } finally {
+   267→      setListLoading(false)
+   268→    }
+   269→  }, [token, filter, page, debouncedQ])
+   270→
+   271→  useEffect(() => {
+   272→    void loadList()
+   273→  }, [loadList])
+   274→
+   275→  // ----- دیالوگ جزئیات -----
+   276→  const [detailOpen, setDetailOpen] = useState(false)
+   277→  const [detailRef, setDetailRef] = useState<string | null>(null)
+   278→  const [detail, setDetail] = useState<PayDetailData | null>(null)
+   279→  const [detailLoading, setDetailLoading] = useState(false)
+   280→  const [detailError, setDetailError] = useState(false)
+   281→  const [actionBusy, setActionBusy] = useState(false)
+   282→  const [approveStage, setApproveStage] = useState(false)
+   283→  const [rejectStage, setRejectStage] = useState(false)
+   284→  const [rejectReason, setRejectReason] = useState('')
+   285→
+   286→  const loadDetail = useCallback(
+   287→    async (ref: string) => {
+   288→      setDetailLoading(true)
+   289→      setDetailError(false)
+   290→      try {
+   291→        const res = await fetch(`/api/admin/payments/${encodeURIComponent(ref)}`, {
+   292→          headers: { 'x-admin-key': token },
+   293→          cache: 'no-store',
+   294→        })
+   295→        if (!res.ok) {
+   296→          setDetailError(true)
+   297→          setDetail(null)
+   298→          return
+   299→        }
+   300→        setDetail((await res.json()) as PayDetailData)
+   301→      } catch {
+   302→        setDetailError(true)
+   303→        setDetail(null)
+   304→      } finally {
+   305→        setDetailLoading(false)
+   306→      }
+   307→    },
+   308→    [token]
+   309→  )
+   310→
+   311→  const openDetail = (ref: string) => {
+   312→    setDetailRef(ref)
+   313→    setDetail(null)
+   314→    setDetailError(false)
+   315→    setApproveStage(false)
+   316→    setRejectStage(false)
+   317→    setRejectReason('')
+   318→    setDetailOpen(true)
+   319→    void loadDetail(ref)
+   320→  }
+   321→
+   322→  const closeDetail = () => {
+   323→    setDetailOpen(false)
+   324→    setDetailRef(null)
+   325→    setDetail(null)
+   326→    setApproveStage(false)
+   327→    setRejectStage(false)
+   328→    setRejectReason('')
+   329→    setLightbox(false)
+   330→  }
+   331→
+   332→  // 🧾 واکشی رسید با هدر ادمین → Object URL (با بستن/تعویض رسید revoke می‌شود)
+   333→  const receiptSrc = detailOpen ? (detail?.order.receiptUrl ?? null) : null
+   334→  const [receiptObjUrl, setReceiptObjUrl] = useState<string | null>(null)
+   335→  const [receiptState, setReceiptState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
+   336→  const [lightbox, setLightbox] = useState(false)
+   337→  useEffect(() => {
+   338→    let cancelled = false
+   339→    let created: string | null = null
+   340→    setReceiptObjUrl(null)
+   341→    setLightbox(false)
+   342→    if (!receiptSrc) {
+   343→      setReceiptState('idle')
+   344→      return
+   345→    }
+   346→    setReceiptState('loading')
+   347→    fetch(receiptSrc, { headers: { 'x-admin-key': token }, cache: 'no-store' })
+   348→      .then((res) => {
+   349→        if (!res.ok) throw new Error('receipt fetch failed')
+   350→        return res.blob()
+   351→      })
+   352→      .then((blob) => {
+   353→        const url = URL.createObjectURL(blob)
+   354→        if (cancelled) {
+   355→          URL.revokeObjectURL(url)
+   356→          return
+   357→        }
+   358→        created = url
+   359→        setReceiptObjUrl(url)
+   360→        setReceiptState('ready')
+   361→      })
+   362→      .catch(() => {
+   363→        if (!cancelled) setReceiptState('error')
+   364→      })
+   365→    return () => {
+   366→      cancelled = true
+   367→      if (created) URL.revokeObjectURL(created)
+   368→    }
+   369→  }, [receiptSrc, token])
+   370→
+   371→  const refreshAll = useCallback(
+   372→    async (ref: string) => {
+   373→      await Promise.all([loadDetail(ref), loadList()])
+   374→      cbRef.current.onChanged?.()
+   375→    },
+   376→    [loadDetail, loadList]
+   377→  )
+   378→
+   379→  // ----- اقدامات -----
+   380→  const doApprove = async () => {
+   381→    if (!detailRef || actionBusy) return
+   382→    setActionBusy(true)
+   383→    try {
+   384→      const res = await fetch(`/api/admin/payments/${encodeURIComponent(detailRef)}/approve`, {
+   385→        method: 'POST',
+   386→        headers: { 'Content-Type': 'application/json', 'x-admin-key': token },
+   387→        body: JSON.stringify({}),
+   388→      })
+   389→      const d = (await res.json().catch(() => ({}))) as { error?: string }
+   390→      if (!res.ok) {
+   391→        onToast?.(d.error || pa.approveFailed)
+   392→        return
+   393→      }
+   394→      onToast?.(pa.approvedToast)
+   395→      setApproveStage(false)
+   396→      await refreshAll(detailRef)
+   397→    } catch {
+   398→      onToast?.(pa.approveFailed)
+   399→    } finally {
+   400→      setActionBusy(false)
+   401→    }
+   402→  }
+   403→
+   404→  const doReject = async () => {
+   405→    const reason = rejectReason.trim()
+   406→    if (!detailRef || actionBusy || reason.length < 3) return
+   407→    setActionBusy(true)
+   408→    try {
+   409→      const res = await fetch(`/api/admin/payments/${encodeURIComponent(detailRef)}/reject`, {
+   410→        method: 'POST',
+   411→        headers: { 'Content-Type': 'application/json', 'x-admin-key': token },
+   412→        body: JSON.stringify({ reason }),
+   413→      })
+   414→      const d = (await res.json().catch(() => ({}))) as { error?: string }
+   415→      if (!res.ok) {
+   416→        onToast?.(d.error || pa.rejectFailed)
+   417→        return
+   418→      }
+   419→      onToast?.(pa.rejectedToast)
+   420→      setRejectStage(false)
+   421→      setRejectReason('')
+   422→      await refreshAll(detailRef)
+   423→    } catch {
+   424→      onToast?.(pa.rejectFailed)
+   425→    } finally {
+   426→      setActionBusy(false)
+   427→    }
+   428→  }
+   429→
+   430→  const doCancel = async () => {
+   431→    if (!detailRef || actionBusy) return
+   432→    if (!window.confirm(a.cancelConfirm)) return
+   433→    setActionBusy(true)
+   434→    try {
+   435→      const res = await fetch(`/api/payments/orders/${encodeURIComponent(detailRef)}`, {
+   436→        method: 'PATCH',
+   437→        headers: { 'Content-Type': 'application/json', 'x-admin-key': token },
+   438→        body: JSON.stringify({ action: 'cancel' }),
+   439→      })
+   440→      const d = (await res.json().catch(() => ({}))) as { error?: string }
+   441→      if (!res.ok) {
+   442→        onToast?.(d.error || pa.loadFailed)
+   443→        return
+   444→      }
+   445→      onToast?.(a.orderCancelled)
+   446→      await refreshAll(detailRef)
+   447→    } catch {
+   448→      onToast?.(pa.loadFailed)
+   449→    } finally {
+   450→      setActionBusy(false)
+   451→    }
+   452→  }
+   453→
+   454→  const counts = data?.counts ?? null
+   455→  const total = data?.total ?? 0
+   456→  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
+   457→  const orders = data?.orders ?? []
+   458→
+   459→  // کارت‌های خلاصه — کلیک = فیلتر همان وضعیت
+   460→  const summaryCards: { key: string; label: string; value: number; icon: React.ReactNode; tone: string }[] = [
+   461→    {
+   462→      key: 'receipt_submitted',
+   463→      label: pa.summaryPendingReview,
+   464→      value: counts?.pendingReview ?? 0,
+   465→      icon: <ReceiptText className="w-5 h-5" aria-hidden="true" />,
+   466→      tone: 'bg-sage-light/40 text-sage-dark',
+   467→    },
+   468→    {
+   469→      key: 'approved',
+   470→      label: pa.summaryApproved,
+   471→      value: counts?.approved ?? 0,
+   472→      icon: <CheckCircle2 className="w-5 h-5" aria-hidden="true" />,
+   473→      tone: 'bg-green-100 text-green-700',
+   474→    },
+   475→    {
+   476→      key: 'rejected',
+   477→      label: pa.summaryRejected,
+   478→      value: counts?.rejected ?? 0,
+   479→      icon: <XCircle className="w-5 h-5" aria-hidden="true" />,
+   480→      tone: 'bg-peach-light/60 text-brown',
+   481→    },
+   482→    {
+   483→      key: 'unpaid',
+   484→      label: pa.summaryUnpaid,
+   485→      value: counts?.unpaid ?? 0,
+   486→      icon: <Hourglass className="w-5 h-5" aria-hidden="true" />,
+   487→      tone: 'bg-butter/40 text-brown',
+   488→    },
+   489→  ]
+   490→
+   491→  const isReviewable = detail?.order.status === 'RECEIPT_SUBMITTED'
+   492→  const isImageReceipt = (detail?.order.receiptMime ?? '').startsWith('image/')
+   493→
+   494→  return (
+   495→    <div>
+   496→      {/* ---------- کارت‌های خلاصه ---------- */}
+   497→      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
+   498→        {summaryCards.map((c) => (
+   499→          <button
+   500→            key={c.key}
+   501→            type="button"
+   502→            onClick={() => setFilter(c.key)}
+   503→            aria-pressed={filter === c.key}
+   504→            className={`bg-white rounded-2xl border p-4 flex items-center gap-3 text-left transition-colors cursor-pointer min-h-[44px] ${
+   505→              filter === c.key ? 'border-sage bg-sage-light/10' : 'border-sage-light/20 hover:border-sage/40'
+   506→            }`}
+   507→          >
+   508→            <span className={`w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 ${c.tone}`}>{c.icon}</span>
+   509→            <span className="min-w-0">
+   510→              <span className="block text-xl font-bold text-brown-dark leading-none tabular-nums">{c.value}</span>
+   511→              <span className="block text-[11px] font-semibold text-brown-light mt-1 truncate">{c.label}</span>
+   512→            </span>
+   513→          </button>
+   514→        ))}
+   515→      </div>
+   516→
+   517→      {/* ---------- زیرعنوان + جست‌وجو + فیلترها ---------- */}
+   518→      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+   519→        <p className="text-xs text-brown-light bg-butter/20 rounded-xl px-4 py-2.5 flex-1 min-w-[240px]">{pa.subtitle}</p>
+   520→        <input
+   521→          type="search"
+   522→          value={query}
+   523→          onChange={(e) => setQuery(e.target.value)}
+   524→          placeholder={pa.searchPlaceholder}
+   525→          aria-label={pa.searchPlaceholder}
+   526→          className={`${inputCls} max-w-xs`}
+   527→        />
+   528→      </div>
+   529→
+   530→      <div className="flex flex-wrap gap-2 mb-4" role="group" aria-label="Payment status filters">
+   531→        {FILTERS.map((f) => {
+   532→          const active = filter === f.key
+   533→          const count = f.countKey && counts ? counts[f.countKey] : null
+   534→          return (
+   535→            <button
+   536→              key={f.key}
+   537→              type="button"
+   538→              onClick={() => setFilter(f.key)}
+   539→              aria-pressed={active}
+   540→              className={`text-xs font-semibold px-3.5 py-2 rounded-full transition-colors cursor-pointer inline-flex items-center gap-1.5 min-h-[36px] ${
+   541→                active ? 'bg-sage text-brown-dark' : 'bg-white border border-sage-light/40 text-brown hover:border-sage'
+   542→              }`}
+   543→            >
+   544→              {f.label}
+   545→              {count !== null && (
+   546→                <span
+   547→                  className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full tabular-nums ${
+   548→                    active ? 'bg-white/70 text-brown-dark' : 'bg-cream text-brown-light'
+   549→                  }`}
+   550→                >
+   551→                  {count}
+   552→                </span>
+   553→              )}
+   554→            </button>
+   555→          )
+   556→        })}
+   557→      </div>
+   558→
+   559→      {/* ---------- جدول ---------- */}
+   560→      <div className="bg-white rounded-2xl border border-sage-light/20 overflow-hidden">
+   561→        {listError ? (
+   562→          <div className="text-center py-14">
+   563→            <SearchX className="w-9 h-9 mx-auto mb-2 text-brown-light/50" aria-hidden="true" />
+   564→            <p className="text-sm text-brown-light mb-3">{pa.loadFailed}</p>
+   565→            <button
+   566→              type="button"
+   567→              onClick={() => void loadList()}
+   568→              className="bg-sage text-brown-dark px-4 py-2 rounded-xl text-xs font-bold hover:bg-sage-dark cursor-pointer inline-flex items-center gap-1.5 min-h-[36px]"
+   569→            >
+   570→              {a.refresh}
+   571→            </button>
+   572→          </div>
+   573→        ) : !listLoading && orders.length === 0 ? (
+   574→          <div className="text-center py-16">
+   575→            <ReceiptText className="w-10 h-10 mx-auto mb-3 text-brown-light/50" aria-hidden="true" />
+   576→            <p className="text-sm text-brown-light">{pa.empty}</p>
+   577→          </div>
+   578→        ) : (
+   579→          <div className="overflow-x-auto">
+   580→            <table className="w-full min-w-[1080px] text-sm">
+   581→              <thead>
+   582→                <tr className="bg-cream/60 text-left">
+   583→                  {[
+   584→                    pa.colOrder,
+   585→                    pa.colCustomer,
+   586→                    pa.colClass,
+   587→                    pa.colAmount,
+   588→                    pa.colDiscount,
+   589→                    pa.colFinal,
+   590→                    pa.colMethod,
+   591→                    pa.colStatus,
+   592→                    pa.colReceipt,
+   593→                    pa.colUpdated,
+   594→                    pa.colAction,
+   595→                  ].map((h) => (
+   596→                    <th key={h} scope="col" className="px-3.5 py-3 text-[10px] font-bold uppercase tracking-wider text-brown-light whitespace-nowrap">
+   597→                      {h}
+   598→                    </th>
+   599→                  ))}
+   600→                </tr>
+   601→              </thead>
+   602→              <tbody>
+   603→                {listLoading &&
+   604→                  [0, 1, 2].map((i) => (
+   605→                    <tr key={`sk-${i}`} className="border-t border-sage-light/15">
+   606→                      <td colSpan={11} className="px-3.5 py-4">
+   607→                        <div className="h-5 bg-cream/80 rounded-lg animate-pulse" />
+   608→                      </td>
+   609→                    </tr>
+   610→                  ))}
+   611→                {!listLoading &&
+   612→                  orders.map((o) => {
+   613→                    const sb = statusBadge(o.status)
+   614→                    const reviewable = o.status === 'RECEIPT_SUBMITTED'
+   615→                    return (
+   616→                      <tr key={o.ref} className="border-t border-sage-light/15 hover:bg-cream/40 transition-colors align-top">
+   617→                        {/* سفارش */}
+   618→                        <td className="px-3.5 py-3">
+   619→                          <span className="font-mono text-xs font-bold text-brown-dark">{o.ref}</span>
+   620→                          <p className="text-[10px] text-brown-light/80 mt-0.5">{fmtDate(o.createdAt)}</p>
+   621→                        </td>
+   622→                        {/* مشتری */}
+   623→                        <td className="px-3.5 py-3 max-w-[180px]">
+   624→                          <p className="text-xs font-bold text-brown-dark truncate">{o.customer.name || '—'}</p>
+   625→                          <p className="text-[11px] text-brown-light truncate">{o.customer.email}</p>
+   626→                        </td>
+   627→                        {/* کلاس */}
+   628→                        <td className="px-3.5 py-3 max-w-[170px]">
+   629→                          <p className="text-xs text-brown truncate">{o.productTitle || '—'}</p>
+   630→                        </td>
+   631→                        {/* مبلغ */}
+   632→                        <td className="px-3.5 py-3 text-xs text-brown tabular-nums whitespace-nowrap">{fmtUsd(o.amountUsd)}</td>
+   633→                        {/* تخفیف */}
+   634→                        <td className="px-3.5 py-3 text-xs whitespace-nowrap">
+   635→                          {o.discountCode ? (
+   636→                            <span className="text-brown-dark font-semibold">
+   637→                              {o.discountCode}
+   638→                              {o.discountAmount !== null && <span className="text-green-700"> −{fmtUsd(o.discountAmount)}</span>}
+   639→                            </span>
+   640→                          ) : (
+   641→                            <span className="text-brown-light/70">{pa.receiptNone}</span>
+   642→                          )}
+   643→                        </td>
+   644→                        {/* نهایی */}
+   645→                        <td className="px-3.5 py-3 text-xs font-bold text-brown-dark tabular-nums whitespace-nowrap">{fmtUsd(o.amountUsd)}</td>
+   646→                        {/* روش پرداخت */}
+   647→                        <td className="px-3.5 py-3">
+   648→                          <span
+   649→                            className={`text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${
+   650→                              o.paymentMethod === 'MANUAL_BANK_CARD' ? 'bg-sage-light/30 text-sage-dark' : 'bg-neutral-200 text-neutral-600'
+   651→                            }`}
+   652→                          >
+   653→                            {methodLabel(o.paymentMethod)}
+   654→                          </span>
+   655→                        </td>
+   656→                        {/* وضعیت */}
+   657→                        <td className="px-3.5 py-3">
+   658→                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${sb.cls}`}>{sb.label}</span>
+   659→                        </td>
+   660→                        {/* رسید */}
+   661→                        <td className="px-3.5 py-3 text-[11px] text-brown-light whitespace-nowrap">
+   662→                          {o.receiptSubmittedAt ? fmtDateTime(o.receiptSubmittedAt) : <span className="text-brown-light/70">{pa.receiptNone}</span>}
+   663→                          {o.receiptResubmits > 0 && (
+   664→                            <span className="block text-[10px] text-brown-light/80 mt-0.5">+{o.receiptResubmits}</span>
+   665→                          )}
+   666→                        </td>
+   667→                        {/* به‌روزرسانی */}
+   668→                        <td className="px-3.5 py-3 text-[11px] text-brown-light whitespace-nowrap">{fmtDateTime(o.updatedAt)}</td>
+   669→                        {/* اقدام */}
+   670→                        <td className="px-3.5 py-3">
+   671→                          <button
+   672→                            type="button"
+   673→                            onClick={() => openDetail(o.ref)}
+   674→                            className={`text-xs font-bold px-3.5 py-2 rounded-xl transition-colors cursor-pointer min-h-[36px] ${
+   675→                              reviewable
+   676→                                ? 'bg-sage text-brown-dark hover:bg-sage-dark'
+   677→                                : 'bg-white border border-sage-light/40 text-brown hover:border-sage'
+   678→                            }`}
+   679→                          >
+   680→                            {pa.review}
+   681→                          </button>
+   682→                        </td>
+   683→                      </tr>
+   684→                    )
+   685→                  })}
+   686→              </tbody>
+   687→            </table>
+   688→          </div>
+   689→        )}
+   690→      </div>
+   691→
+   692→      {/* صفحه‌بندی */}
+   693→      {total > 0 && (
+   694→        <nav className="flex items-center justify-between gap-3 mt-3" aria-label="Payments pagination">
+   695→          <button
+   696→            type="button"
+   697→            onClick={() => setPage((p) => Math.max(1, p - 1))}
+   698→            disabled={page <= 1}
+   699→            className="bg-white border border-sage-light/40 text-brown px-4 py-2 rounded-xl text-xs font-semibold hover:border-sage disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer min-h-[36px]"
+   700→          >
+   701→            {pa.prev}
+   702→          </button>
+   703→          <span className="text-xs text-brown-light tabular-nums">{pa.pageOf(page, totalPages)}</span>
+   704→          <button
+   705→            type="button"
+   706→            onClick={() => setPage((p) => (p >= totalPages ? p : p + 1))}
+   707→            disabled={page >= totalPages}
+   708→            className="bg-white border border-sage-light/40 text-brown px-4 py-2 rounded-xl text-xs font-semibold hover:border-sage disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer min-h-[36px]"
+   709→          >
+   710→            {pa.next}
+   711→          </button>
+   712→        </nav>
+   713→      )}
+   714→
+   715→      {/* ---------- دیالوگ جزئیات ---------- */}
+   716→      <Dialog open={detailOpen} onOpenChange={(v) => !v && closeDetail()}>
+   717→        <DialogContent className="max-w-4xl max-h-[88vh] overflow-y-auto ct-scroll-area">
+   718→          <DialogHeader>
+   719→            <DialogTitle className="flex flex-wrap items-center gap-2.5 pr-8">
+   720→              <span>{pa.detailTitle}</span>
+   721→              {detail && (
+   722→                <>
+   723→                  <span className="font-mono text-sm font-bold text-brown-dark bg-cream px-2.5 py-1 rounded-lg">{detail.order.ref}</span>
+   724→                  <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${statusBadge(detail.order.status).cls}`}>
+   725→                    {statusBadge(detail.order.status).label}
+   726→                  </span>
+   727→                  {detail.order.paymentMethod === 'USDT_TRON' && (
+   728→                    <span className="text-[10px] font-bold bg-neutral-200 text-neutral-600 px-2.5 py-1 rounded-full">{pa.legacyBadge}</span>
+   729→                  )}
+   730→                </>
+   731→              )}
+   732→            </DialogTitle>
+   733→          </DialogHeader>
+   734→
+   735→          {detailLoading && !detail && (
+   736→            <p className="text-xs text-brown-light flex items-center gap-2 py-10 justify-center" role="status">
+   737→              <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> {pa.loading}
+   738→            </p>
+   739→          )}
+   740→
+   741→          {detailError && !detail && (
+   742→            <div className="text-center py-10">
+   743→              <SearchX className="w-9 h-9 mx-auto mb-2 text-brown-light/50" aria-hidden="true" />
+   744→              <p className="text-sm text-brown-light">{pa.loadFailed}</p>
+   745→            </div>
+   746→          )}
+   747→
+   748→          {detail && (
+   749→            <div className="space-y-5">
+   750→              {/* 👤 مشتری */}
+   751→              <section>
+   752→                <h4 className="text-xs font-bold uppercase tracking-wider text-brown-light mb-2 flex items-center gap-1.5">
+   753→                  <User className="w-3.5 h-3.5" aria-hidden="true" /> {pa.blockCustomer}
+   754→                </h4>
+   755→                <div className="grid sm:grid-cols-3 gap-2.5">
+   756→                  <InfoCell label={pa.cName} value={detail.customer.name || '—'} />
+   757→                  <InfoCell label={pa.cEmail} value={detail.customer.email || '—'} />
+   758→                  <InfoCell label={pa.cPhone} value={detail.customer.phone || '—'} />
+   759→                  <InfoCell label={pa.cCountry} value={detail.customer.country || '—'} />
+   760→                  <InfoCell label={pa.cTelegram} value={detail.customer.telegramUsername ? `@${detail.customer.telegramUsername}` : '—'} />
+   761→                  <InfoCell label={pa.cMemberSince} value={detail.customer.memberSince ? fmtDate(detail.customer.memberSince) : '—'} />
+   762→                </div>
+   763→              </section>
+   764→
+   765→              {/* 🎓 کلاس */}
+   766→              <section>
+   767→                <h4 className="text-xs font-bold uppercase tracking-wider text-brown-light mb-2 flex items-center gap-1.5">
+   768→                  <Landmark className="w-3.5 h-3.5" aria-hidden="true" /> {pa.blockClass}
+   769→                </h4>
+   770→                {detail.class ? (
+   771→                  <div className="grid sm:grid-cols-3 gap-2.5">
+   772→                    <InfoCell label={pa.colClass} value={detail.class.title} accent />
+   773→                    <InfoCell label={pa.clLevel} value={detail.class.level || '—'} />
+   774→                    <InfoCell label={pa.clType} value={detail.class.classType || '—'} />
+   775→                    <InfoCell label={pa.clFormat} value={detail.class.format || '—'} />
+   776→                    <InfoCell label={pa.clSchedule} value={detail.class.schedule || '—'} />
+   777→                    <InfoCell
+   778→                      label={pa.clSessions}
+   779→                      value={detail.class.packageSessions ? `${detail.class.packageSessions} × ${detail.class.sessionDurationMin ?? '—'} min` : '—'}
+   780→                    />
+   781→                  </div>
+   782→                ) : (
+   783→                  <p className="text-xs text-brown-light bg-cream/50 border border-sage-light/20 rounded-xl px-4 py-3">—</p>
+   784→                )}
+   785→              </section>
+   786→
+   787→              {/* 💰 مالی */}
+   788→              <section>
+   789→                <h4 className="text-xs font-bold uppercase tracking-wider text-brown-light mb-2 flex items-center gap-1.5">
+   790→                  <ReceiptText className="w-3.5 h-3.5" aria-hidden="true" /> {pa.blockFinancial}
+   791→                </h4>
+   792→                <div className="grid sm:grid-cols-4 gap-2.5">
+   793→                  <InfoCell label={pa.fOriginal} value={fmtUsd(detail.order.baseAmount)} />
+   794→                  <InfoCell label={pa.fTier} value={detail.order.tierPercent !== null ? `${detail.order.tierPercent}%` : '—'} />
+   795→                  <InfoCell
+   796→                    label={pa.fCode}
+   797→                    value={
+   798→                      detail.order.discountCode
+   799→                        ? `${detail.order.discountCode}${detail.order.discountAmount !== null ? ` (−${fmtUsd(detail.order.discountAmount)})` : ''}`
+   800→                        : '—'
+   801→                    }
+   802→                  />
+   803→                  <InfoCell label={pa.fFinal} value={fmtUsd(detail.order.amountUsd)} accent />
+   804→                </div>
+   805→              </section>
+   806→
+   807→              {/* 💳 پرداخت */}
+   808→              <section>
+   809→                <h4 className="text-xs font-bold uppercase tracking-wider text-brown-light mb-2 flex items-center gap-1.5">
+   810→                  <Clock className="w-3.5 h-3.5" aria-hidden="true" /> {pa.blockPayment}
+   811→                </h4>
+   812→                <div className="grid sm:grid-cols-3 gap-2.5">
+   813→                  <InfoCell label={pa.pMethod} value={methodLabel(detail.order.paymentMethod)} />
+   814→                  <InfoCell label={pa.pStatus} value={statusBadge(detail.order.status).label} />
+   815→                  <InfoCell label={pa.pSubmitted} value={detail.order.receiptSubmittedAt ? fmtDateTime(detail.order.receiptSubmittedAt) : '—'} />
+   816→                  <InfoCell label={pa.pReviewed} value={detail.order.reviewedAt ? fmtDateTime(detail.order.reviewedAt) : '—'} />
+   817→                  <InfoCell label={pa.pReviewedBy} value={detail.order.reviewedBy || '—'} />
+   818→                  <InfoCell label={pa.pPaid} value={detail.order.paidAt ? fmtDateTime(detail.order.paidAt) : '—'} />
+   819→                  <InfoCell label={pa.pResubmits} value={String(detail.order.receiptResubmits ?? 0)} />
+   820→                </div>
+   821→                {/* جریان قدیمی USDT — شبکه/آدرس/تراکنش سفارش‌های تاریخی */}
+   822→                {detail.order.legacy && (
+   823→                  <div className="bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3 mt-2.5 space-y-1 text-[11px] text-brown-light">
+   824→                    <p className="font-bold text-brown-dark text-[10px] uppercase tracking-wider mb-1">{pa.legacyBadge}</p>
+   825→                    <p>
+   826→                      Network: <span className="font-semibold text-brown-dark">{detail.order.legacy.network}</span> · Mode:{' '}
+   827→                      <span className="font-semibold text-brown-dark">{detail.order.legacy.paymentMode}</span>
+   828→                    </p>
+   829→                    <p className="break-all font-mono">{detail.order.legacy.paymentAddress}</p>
+   830→                    {detail.order.legacy.txHash && <p className="break-all font-mono">tx: {detail.order.legacy.txHash}</p>}
+   831→                  </div>
+   832→                )}
+   833→              </section>
+   834→
+   835→              {/* 🧾 رسید */}
+   836→              <section>
+   837→                <h4 className="text-xs font-bold uppercase tracking-wider text-brown-light mb-2 flex items-center gap-1.5">
+   838→                  <ReceiptText className="w-3.5 h-3.5" aria-hidden="true" /> {pa.blockReceipt}
+   839→                </h4>
+   840→
+   841→                {!detail.order.receiptUrl ? (
+   842→                  <p className="text-xs text-brown-light bg-cream/50 border border-dashed border-sage-light/40 rounded-xl px-4 py-6 text-center">
+   843→                    {pa.receiptEmpty}
+   844→                  </p>
+   845→                ) : (
+   846→                  <div className="bg-cream/50 border border-sage-light/25 rounded-xl p-4">
+   847→                    {receiptState === 'loading' && (
+   848→                      <p className="text-xs text-brown-light flex items-center gap-2 justify-center py-6" role="status">
+   849→                        <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> {pa.loading}
+   850→                      </p>
+   851→                    )}
+   852→                    {receiptState === 'error' && <p className="text-xs text-brown-light text-center py-6">{pa.loadFailed}</p>}
+   853→                    {receiptState === 'ready' && receiptObjUrl && isImageReceipt && (
+   854→                      <div className="text-center">
+   855→                        <img
+   856→                          src={receiptObjUrl}
+   857→                          alt={detail.order.receiptFileName || pa.receiptView}
+   858→                          onClick={() => setLightbox(true)}
+   859→                          className="max-h-80 rounded-xl border border-sage-light/40 cursor-zoom-in mx-auto"
+   860→                        />
+   861→                        <p className="text-[10px] text-brown-light/80 mt-2">{pa.zoomHint}</p>
+   862→                      </div>
+   863→                    )}
+   864→                    {receiptState === 'ready' && receiptObjUrl && !isImageReceipt && (
+   865→                      <div className="flex flex-wrap items-center gap-3 bg-white border border-sage-light/30 rounded-xl px-4 py-3.5">
+   866→                        <FileText className="w-8 h-8 text-sage-dark flex-shrink-0" aria-hidden="true" />
+   867→                        <div className="min-w-0 flex-1">
+   868→                          <p className="text-xs font-bold text-brown-dark truncate">{detail.order.receiptFileName || 'receipt.pdf'}</p>
+   869→                          <p className="text-[10px] text-brown-light">
+   870→                            PDF · {detail.order.receiptSize ? `${Math.max(1, Math.round(detail.order.receiptSize / 1024))} KB` : '—'}
+   871→                          </p>
+   872→                        </div>
+   873→                        <a
+   874→                          href={receiptObjUrl}
+   875→                          target="_blank"
+   876→                          rel="noopener noreferrer"
+   877→                          className="bg-sage text-brown-dark text-xs font-bold px-3.5 py-2 rounded-xl hover:bg-sage-dark transition-colors inline-flex items-center gap-1.5 min-h-[36px]"
+   878→                        >
+   879→                          {pa.receiptView} <ExternalLink className="w-3.5 h-3.5" aria-hidden="true" />
+   880→                        </a>
+   881→                      </div>
+   882→                    )}
+   883→                    <p className="text-[10px] text-brown-light/80 mt-2.5 break-all">
+   884→                      {pa.pFileName}: {detail.order.receiptFileName || '—'}
+   885→                      {detail.order.receiptSize ? ` · ${Math.max(1, Math.round(detail.order.receiptSize / 1024))} KB` : ''}
+   886→                    </p>
+   887→                  </div>
+   888→                )}
+   889→
+   890→                {/* دلیل ردّ قبلی — برای بررسی ارسالِ مجدد */}
+   891→                {detail.order.status === 'REJECTED' && detail.order.rejectionReason && (
+   892→                  <p className="text-xs text-brown-dark bg-peach-light/60 border border-peach/40 rounded-xl px-4 py-3 mt-2.5 leading-relaxed">
+   893→                    <span className="font-bold">{a.statusRejected}:</span> {detail.order.rejectionReason}
+   894→                  </p>
+   895→                )}
+   896→
+   897→                {/* ---------- نوار اقدام تأیید/ردّ ---------- */}
+   898→                {isReviewable && (
+   899→                  <div className="mt-3">
+   900→                    {!approveStage && !rejectStage && (
+   901→                      <div className="flex flex-wrap items-center gap-2.5">
+   902→                        <button
+   903→                          type="button"
+   904→                          onClick={() => setApproveStage(true)}
+   905→                          disabled={actionBusy}
+   906→                          className="bg-green-600 text-white px-4 py-2.5 rounded-xl text-xs font-bold hover:bg-green-700 transition-colors cursor-pointer disabled:opacity-50 inline-flex items-center gap-1.5 min-h-[44px]"
+   907→                        >
+   908→                          <CheckCircle2 className="w-4 h-4" aria-hidden="true" /> {pa.approve}
+   909→                        </button>
+   910→                        <button
+   911→                          type="button"
+   912→                          onClick={() => setRejectStage(true)}
+   913→                          disabled={actionBusy}
+   914→                          className="bg-red-500 text-white px-4 py-2.5 rounded-xl text-xs font-bold hover:bg-red-600 transition-colors cursor-pointer disabled:opacity-50 inline-flex items-center gap-1.5 min-h-[44px]"
+   915→                        >
+   916→                          <XCircle className="w-4 h-4" aria-hidden="true" /> {pa.reject}
+   917→                        </button>
+   918→                      </div>
+   919→                    )}
+   920→
+   921→                    {/* گام تأیید تأییدیهٔ داخلی */}
+   922→                    {approveStage && (
+   923→                      <div className="bg-sage-light/25 border border-sage/40 rounded-xl px-4 py-3.5" role="alertdialog" aria-label={pa.approveConfirmTitle}>
+   924→                        <p className="text-sm font-bold text-brown-dark mb-1">{pa.approveConfirmTitle}</p>
+   925→                        <p className="text-xs text-brown-light leading-relaxed mb-3">
+   926→                          {pa.approveConfirmText(detail.order.ref, `$${Number(detail.order.amountUsd).toFixed(2)}`)}
+   927→                        </p>
+   928→                        <div className="flex flex-wrap items-center gap-2.5">
+   929→                          <button
+   930→                            type="button"
+   931→                            onClick={doApprove}
+   932→                            disabled={actionBusy}
+   933→                            className="bg-green-600 text-white px-4 py-2.5 rounded-xl text-xs font-bold hover:bg-green-700 transition-colors cursor-pointer disabled:opacity-50 inline-flex items-center gap-1.5 min-h-[44px]"
+   934→                          >
+   935→                            {actionBusy && <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />}
+   936→                            {pa.approveYes}
+   937→                          </button>
+   938→                          <button
+   939→                            type="button"
+   940→                            onClick={() => setApproveStage(false)}
+   941→                            disabled={actionBusy}
+   942→                            className="bg-white border border-sage-light/40 text-brown px-4 py-2.5 rounded-xl text-xs font-semibold hover:border-sage transition-colors cursor-pointer disabled:opacity-60 min-h-[44px]"
+   943→                          >
+   944→                            {pa.close}
+   945→                          </button>
+   946→                        </div>
+   947→                      </div>
+   948→                    )}
+   949→
+   950→                    {/* گام ردّ + دلیل */}
+   951→                    {rejectStage && (
+   952→                      <div className="bg-peach-light/50 border border-peach/50 rounded-xl px-4 py-3.5" role="alertdialog" aria-label={pa.rejectTitle}>
+   953→                        <p className="text-sm font-bold text-brown-dark mb-1">{pa.rejectTitle}</p>
+   954→                        <p className="text-xs font-semibold text-brown mb-2">{pa.rejectReasonLabel}</p>
+   955→                        <div className="flex flex-wrap gap-2 mb-3">
+   956→                          {pa.rejectPresets.map((preset) => (
+   957→                            <button
+   958→                              key={preset}
+   959→                              type="button"
+   960→                              onClick={() => setRejectReason(preset)}
+   961→                              className={`text-[11px] font-semibold px-3 py-1.5 rounded-full transition-colors cursor-pointer min-h-[32px] ${
+   962→                                rejectReason === preset
+   963→                                  ? 'bg-brown-dark text-white'
+   964→                                  : 'bg-white border border-sage-light/40 text-brown hover:border-peach'
+   965→                              }`}
+   966→                            >
+   967→                              {preset}
+   968→                            </button>
+   969→                          ))}
+   970→                        </div>
+   971→                        <textarea
+   972→                          rows={3}
+   973→                          value={rejectReason}
+   974→                          onChange={(e) => setRejectReason(e.target.value)}
+   975→                          placeholder={pa.rejectCustom}
+   976→                          maxLength={500}
+   977→                          aria-label={pa.rejectReasonLabel}
+   978→                          className={`${inputCls} resize-none`}
+   979→                        />
+   980→                        <div className="flex flex-wrap items-center gap-2.5 mt-3">
+   981→                          <button
+   982→                            type="button"
+   983→                            onClick={doReject}
+   984→                            disabled={actionBusy || rejectReason.trim().length < 3}
+   985→                            className="bg-red-500 text-white px-4 py-2.5 rounded-xl text-xs font-bold hover:bg-red-600 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1.5 min-h-[44px]"
+   986→                          >
+   987→                            {actionBusy && <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />}
+   988→                            {pa.rejectSubmit}
+   989→                          </button>
+   990→                          <button
+   991→                            type="button"
+   992→                            onClick={() => {
+   993→                              setRejectStage(false)
+   994→                              setRejectReason('')
+   995→                            }}
+   996→                            disabled={actionBusy}
+   997→                            className="bg-white border border-sage-light/40 text-brown px-4 py-2.5 rounded-xl text-xs font-semibold hover:border-sage transition-colors cursor-pointer disabled:opacity-60 min-h-[44px]"
+   998→                          >
+   999→                            {pa.close}
+  1000→                          </button>
+  1001→                        </div>
+  1002→                      </div>
+  1003→                    )}
+  1004→                  </div>
+  1005→                )}
+  1006→
+  1007→                {/* لغو سفارش — فقط PENDING */}
+  1008→                {detail.order.status === 'PENDING' && (
+  1009→                  <div className="mt-3">
+  1010→                    <button
+  1011→                      type="button"
+  1012→                      onClick={doCancel}
+  1013→                      disabled={actionBusy}
+  1014→                      className="text-xs font-semibold text-brown-light hover:text-red-500 border border-sage-light/40 hover:border-red-200 rounded-xl px-4 py-2.5 transition-colors cursor-pointer disabled:opacity-60 min-h-[44px]"
+  1015→                    >
+  1016→                      {pa.cancelAction}
+  1017→                    </button>
+  1018→                  </div>
+  1019→                )}
+  1020→              </section>
+  1021→
+  1022→              {/* 🧵 زنجیرهٔ ممیزی */}
+  1023→              <section>
+  1024→                <h4 className="text-xs font-bold uppercase tracking-wider text-brown-light mb-2 flex items-center gap-1.5">
+  1025→                  <Clock className="w-3.5 h-3.5" aria-hidden="true" /> {pa.blockEvents}
+  1026→                </h4>
+  1027→                {detail.events.length === 0 ? (
+  1028→                  <p className="text-xs text-brown-light bg-cream/50 border border-dashed border-sage-light/40 rounded-xl px-4 py-5 text-center">
+  1029→                    {pa.eventsEmpty}
+  1030→                  </p>
+  1031→                ) : (
+  1032→                  <ul className="bg-white border border-sage-light/20 rounded-xl overflow-hidden max-h-64 overflow-y-auto ct-scroll-area">
+  1033→                    {detail.events.map((e, i) => (
+  1034→                      <li
+  1035→                        key={e.id}
+  1036→                        className={`px-4 py-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs ${
+  1037→                          i !== detail.events.length - 1 ? 'border-b border-sage-light/15' : ''
+  1038→                        }`}
+  1039→                      >
+  1040→                        <span
+  1041→                          className={`font-bold px-2 py-0.5 rounded-full text-[10px] whitespace-nowrap ${
+  1042→                            e.kind === 'PAID' || e.kind === 'APPROVED'
+  1043→                              ? 'bg-green-100 text-green-800'
+  1044→                              : e.kind === 'REJECTED'
+  1045→                                ? 'bg-peach-light/60 text-brown'
+  1046→                                : 'bg-cream text-brown-light'
+  1047→                          }`}
+  1048→                        >
+  1049→                          {e.kind}
+  1050→                        </span>
+  1051→                        <span className="flex-1 min-w-32 truncate text-brown-light" title={e.detail}>
+  1052→                          {eventDetailLine(e.detail)}
+  1053→                        </span>
+  1054→                        <span className="text-brown-light/70 whitespace-nowrap">{fmtDateTime(e.createdAt)}</span>
+  1055→                      </li>
+  1056→                    ))}
+  1057→                  </ul>
+  1058→                )}
+  1059→              </section>
+  1060→            </div>
+  1061→          )}
+  1062→        </DialogContent>
+  1063→      </Dialog>
+  1064→
+  1065→      {/* 🔍 لایت‌باکس تمام‌صفحهٔ رسید */}
+  1066→      {lightbox && receiptObjUrl && isImageReceipt && (
+  1067→        <div
+  1068→          role="dialog"
+  1069→          aria-modal="true"
+  1070→          aria-label={pa.receiptView}
+  1071→          className="fixed inset-0 bg-black/80 z-[70] flex items-center justify-center p-6 cursor-zoom-out"
+  1072→          onClick={() => setLightbox(false)}
+  1073→        >
+  1074→          <img src={receiptObjUrl} alt={detail?.order.receiptFileName || 'receipt'} className="max-h-[90vh] max-w-[90vw] rounded-xl shadow-2xl" />
+  1075→          <button
+  1076→            type="button"
+  1077→            onClick={() => setLightbox(false)}
+  1078→            aria-label={pa.close}
+  1079→            className="absolute top-5 right-5 w-10 h-10 rounded-full bg-white/90 text-brown-dark flex items-center justify-center hover:bg-white transition-colors cursor-pointer text-lg font-bold"
+  1080→          >
+  1081→            ✕
+  1082→          </button>
+  1083→          <p className="absolute bottom-5 left-1/2 -translate-x-1/2 text-white/70 text-xs">{pa.zoomHint}</p>
+  1084→        </div>
+  1085→      )}
+  1086→    </div>
+  1087→  )
+  1088→}
+  1089→
+  1090→// سلول اطلاعات با برچسب — هماهنگ با ProfileCell پنل
+  1091→function InfoCell({ label, value, accent }: { label: string; value: React.ReactNode; accent?: boolean }) {
+  1092→  return (
+  1093→    <div className="bg-cream/50 rounded-xl border border-sage-light/20 px-3.5 py-2.5 min-w-0">
+  1094→      <p className="text-[10px] font-bold uppercase tracking-wider text-brown-light mb-0.5">{label}</p>
+  1095→      <p className={`text-sm text-brown-dark break-words ${accent ? 'font-bold' : 'font-semibold'}`}>{value}</p>
+  1096→    </div>
+  1097→  )
+  1098→}
+  1099→

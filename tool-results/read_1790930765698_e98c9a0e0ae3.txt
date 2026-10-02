@@ -1,0 +1,739 @@
+     1→// ---------------------------------------------------------------------------
+     2→// 🛠️ ensure-schema — خودترمیمیِ اسکیمای دیتابیس در زمان اجرا (فاز ۶۳)
+     3→//
+     4→// ریشهٔ واقعی «Could not create the account (Ref: …)» و «لاگین نمی‌شود» روی
+     5→// محیط استقرار: فایل SQLite تولید یا «خالی» است (بدون هیچ جدولی — Prisma خودش
+     6→// هرگز جدول نمی‌سازد؛ db push یک گام دستی CLI است) یا از یک بکاپِ قدیمی با
+     7→// اسکیمای کهنه بازیابی شده است (ستون‌های جدید مثل dateOfBirth/uniqueCode غایب‌اند).
+     8→// نتیجه: هر کوئری Prisma با P2021 (جدول غایب) یا P2022 (ستون غایب) خطا می‌دهد و
+     9→// register/login با 500 + کد رهگیری شکست می‌خورند.
+    10→//
+    11→// راه‌حل: این ماژول «فقط-افزاینده» (additive-only) است و هرگز:
+    12→//   • جدولی را drop نمی‌کند
+    13→//   • ستونی را حذف یا نوعش را تغییر نمی‌دهد
+    14→//   • هیچ ردیف داده‌ای را دست نمی‌زند
+    15→// فقط: جدول‌های غایب را با شکل کامل فعلی می‌سازد، ستون‌های غایب جدول‌های موجود
+    16→// را با DEFAULT امن اضافه می‌کند و ایندکس‌های یکتا/جست‌وجو را تضمین می‌کند.
+    17→// اجرای دوباره کاملاً بی‌اثر (idempotent) است.
+    18→//
+    19→// امنیت: هیچ راز/دادهٔ حساسی در این فایل نیست؛ فقط DDL.
+    20→// ---------------------------------------------------------------------------
+    21→
+    22→import { db } from '@/lib/db'
+    23→
+    24→/** تشخیص خطای ناهم‌خوانی اسکیما (جدول/ستون غایب) از روی کد Prisma */
+    25→export function isSchemaDriftError(e: unknown): boolean {
+    26→  const code = (e as { code?: string } | null)?.code
+    27→  return code === 'P2021' || code === 'P2022'
+    28→}
+    29→
+    30→// ---------------------------------------------------------------------------
+    31→// DDL کامل فعلی — آینهٔ prisma/schema.prisma (فاز ۶۳). اگر آینده جدولی اضافه
+    32→// یا ستونی پیدا کرد، همین‌جا هم به‌روز می‌شود (تک منبع مکمل).
+    33→// ---------------------------------------------------------------------------
+    34→
+    35→const CREATE_TABLES: readonly string[] = [
+    36→  `CREATE TABLE IF NOT EXISTS "SupportMessage" (
+    37→    "id" TEXT NOT NULL PRIMARY KEY,
+    38→    "name" TEXT NOT NULL,
+    39→    "email" TEXT NOT NULL,
+    40→    "topic" TEXT NOT NULL DEFAULT 'general',
+    41→    "message" TEXT NOT NULL,
+    42→    "status" TEXT NOT NULL DEFAULT 'new',
+    43→    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    44→  )`,
+    45→  `CREATE TABLE IF NOT EXISTS "Registration" (
+    46→    "id" TEXT NOT NULL PRIMARY KEY,
+    47→    "name" TEXT NOT NULL,
+    48→    "email" TEXT NOT NULL,
+    49→    "phone" TEXT,
+    50→    "userId" TEXT,
+    51→    "age" INTEGER,
+    52→    "level" TEXT NOT NULL,
+    53→    "classType" TEXT NOT NULL DEFAULT 'group',
+    54→    "deletedAt" DATETIME,
+    55→    "classTitle" TEXT,
+    56→    "schedule" TEXT,
+    57→    "goal" TEXT,
+    58→    "message" TEXT,
+    59→    "status" TEXT NOT NULL DEFAULT 'new',
+    60→    "timezone" TEXT NOT NULL DEFAULT '',
+    61→    "preferredDays" TEXT NOT NULL DEFAULT '[]',
+    62→    "preferredTimes" TEXT NOT NULL DEFAULT '[]',
+    63→    "daysPerWeek" INTEGER,
+    64→    "scheduleAck" BOOLEAN NOT NULL DEFAULT 0,
+    65→    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    66→    CONSTRAINT "Registration_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE SET NULL ON UPDATE CASCADE
+    67→  )`,
+    68→  `CREATE TABLE IF NOT EXISTS "NewsletterSubscriber" (
+    69→    "id" TEXT NOT NULL PRIMARY KEY,
+    70→    "email" TEXT NOT NULL,
+    71→    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    72→  )`,
+    73→  `CREATE TABLE IF NOT EXISTS "Post" (
+    74→    "id" TEXT NOT NULL PRIMARY KEY,
+    75→    "title" TEXT NOT NULL,
+    76→    "slug" TEXT NOT NULL,
+    77→    "tag" TEXT NOT NULL DEFAULT 'news',
+    78→    "emoji" TEXT NOT NULL DEFAULT '📝',
+    79→    "color" TEXT NOT NULL DEFAULT 'sage',
+    80→    "image" TEXT,
+    81→    "views" INTEGER NOT NULL DEFAULT 0,
+    82→    "excerpt" TEXT NOT NULL,
+    83→    "content" TEXT NOT NULL,
+    84→    "published" BOOLEAN NOT NULL DEFAULT 1,
+    85→    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    86→    "updatedAt" DATETIME NOT NULL
+    87→  )`,
+    88→  `CREATE TABLE IF NOT EXISTS "Testimonial" (
+    89→    "id" TEXT NOT NULL PRIMARY KEY,
+    90→    "name" TEXT NOT NULL,
+    91→    "role" TEXT,
+    92→    "rating" INTEGER NOT NULL DEFAULT 5,
+    93→    "text" TEXT NOT NULL,
+    94→    "status" TEXT NOT NULL DEFAULT 'pending',
+    95→    "featured" BOOLEAN NOT NULL DEFAULT 0,
+    96→    "likeCount" INTEGER NOT NULL DEFAULT 0,
+    97→    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    98→    "deletedAt" DATETIME
+    99→  )`,
+   100→  `CREATE TABLE IF NOT EXISTS "ReviewLike" (
+   101→    "id" TEXT NOT NULL PRIMARY KEY,
+   102→    "testimonialId" TEXT NOT NULL,
+   103→    "visitorId" TEXT NOT NULL,
+   104→    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+   105→    CONSTRAINT "ReviewLike_testimonialId_fkey" FOREIGN KEY ("testimonialId") REFERENCES "Testimonial" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+   106→  )`,
+   107→  `CREATE TABLE IF NOT EXISTS "FaqItem" (
+   108→    "id" TEXT NOT NULL PRIMARY KEY,
+   109→    "category" TEXT NOT NULL DEFAULT 'general',
+   110→    "question" TEXT NOT NULL,
+   111→    "answer" TEXT NOT NULL,
+   112→    "sortOrder" INTEGER NOT NULL DEFAULT 0,
+   113→    "published" BOOLEAN NOT NULL DEFAULT 1,
+   114→    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+   115→    "updatedAt" DATETIME NOT NULL,
+   116→    "deletedAt" DATETIME
+   117→  )`,
+   118→  `CREATE TABLE IF NOT EXISTS "LearnCard" (
+   119→    "id" TEXT NOT NULL PRIMARY KEY,
+   120→    "chinese" TEXT NOT NULL,
+   121→    "pinyin" TEXT NOT NULL,
+   122→    "meaning" TEXT NOT NULL,
+   123→    "example" TEXT,
+   124→    "sortOrder" INTEGER NOT NULL DEFAULT 0,
+   125→    "published" BOOLEAN NOT NULL DEFAULT 1,
+   126→    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+   127→  )`,
+   128→  `CREATE TABLE IF NOT EXISTS "QuizQuestion" (
+   129→    "id" TEXT NOT NULL PRIMARY KEY,
+   130→    "question" TEXT NOT NULL,
+   131→    "options" TEXT NOT NULL,
+   132→    "sortOrder" INTEGER NOT NULL DEFAULT 0,
+   133→    "published" BOOLEAN NOT NULL DEFAULT 1,
+   134→    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+   135→  )`,
+   136→  `CREATE TABLE IF NOT EXISTS "Teacher" (
+   137→    "id" TEXT NOT NULL PRIMARY KEY,
+   138→    "name" TEXT NOT NULL,
+   139→    "role" TEXT NOT NULL,
+   140→    "bio" TEXT NOT NULL DEFAULT '',
+   141→    "tag" TEXT NOT NULL DEFAULT '',
+   142→    "langs" TEXT NOT NULL DEFAULT 'Chinese, English',
+   143→    "image" TEXT,
+   144→    "resume" TEXT NOT NULL DEFAULT '',
+   145→    "experienceYears" INTEGER NOT NULL DEFAULT 0,
+   146→    "studentsTaught" INTEGER NOT NULL DEFAULT 0,
+   147→    "certificates" TEXT NOT NULL DEFAULT '',
+   148→    "samples" TEXT NOT NULL DEFAULT '[]',
+   149→    "sortOrder" INTEGER NOT NULL DEFAULT 0,
+   150→    "published" BOOLEAN NOT NULL DEFAULT 1,
+   151→    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+   152→  )`,
+   153→  `CREATE TABLE IF NOT EXISTS "Lesson" (
+   154→    "id" TEXT NOT NULL PRIMARY KEY,
+   155→    "slug" TEXT NOT NULL,
+   156→    "title" TEXT NOT NULL,
+   157→    "text" TEXT NOT NULL DEFAULT '',
+   158→    "subtitle" TEXT NOT NULL DEFAULT '',
+   159→    "big" TEXT NOT NULL DEFAULT '',
+   160→    "small" TEXT NOT NULL DEFAULT '',
+   161→    "tag" TEXT NOT NULL DEFAULT '',
+   162→    "category" TEXT NOT NULL DEFAULT 'vocabulary',
+   163→    "color" TEXT NOT NULL DEFAULT 'sage',
+   164→    "action" TEXT NOT NULL DEFAULT 'Learn',
+   165→    "isVideo" BOOLEAN NOT NULL DEFAULT 0,
+   166→    "words" TEXT NOT NULL DEFAULT '[]',
+   167→    "sortOrder" INTEGER NOT NULL DEFAULT 0,
+   168→    "published" BOOLEAN NOT NULL DEFAULT 1,
+   169→    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+   170→  )`,
+   171→  `CREATE TABLE IF NOT EXISTS "SiteSetting" (
+   172→    "key" TEXT NOT NULL PRIMARY KEY,
+   173→    "value" TEXT NOT NULL,
+   174→    "updatedAt" DATETIME NOT NULL
+   175→  )`,
+   176→  `CREATE TABLE IF NOT EXISTS "User" (
+   177→    "id" TEXT NOT NULL PRIMARY KEY,
+   178→    "email" TEXT NOT NULL,
+   179→    "passwordHash" TEXT NOT NULL,
+   180→    "firstName" TEXT NOT NULL,
+   181→    "lastName" TEXT NOT NULL,
+   182→    "dateOfBirth" DATETIME,
+   183→    "country" TEXT NOT NULL DEFAULT '',
+   184→    "countryCode" TEXT NOT NULL DEFAULT '',
+   185→    "phone" TEXT,
+   186→    "telegramUsername" TEXT,
+   187→    "telegramId" TEXT,
+   188→    "uniqueCode" TEXT,
+   189→    "lastLoginAt" DATETIME,
+   190→    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+   191→    "updatedAt" DATETIME NOT NULL
+   192→  )`,
+   193→  `CREATE TABLE IF NOT EXISTS "UserSession" (
+   194→    "id" TEXT NOT NULL PRIMARY KEY,
+   195→    "tokenHash" TEXT NOT NULL,
+   196→    "userId" TEXT NOT NULL,
+   197→    "userAgent" TEXT NOT NULL DEFAULT '',
+   198→    "expiresAt" DATETIME NOT NULL,
+   199→    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+   200→    CONSTRAINT "UserSession_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+   201→  )`,
+   202→  `CREATE TABLE IF NOT EXISTS "PasswordResetToken" (
+   203→    "id" TEXT NOT NULL PRIMARY KEY,
+   204→    "tokenHash" TEXT NOT NULL,
+   205→    "userId" TEXT NOT NULL,
+   206→    "expiresAt" DATETIME NOT NULL,
+   207→    "usedAt" DATETIME,
+   208→    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+   209→    CONSTRAINT "PasswordResetToken_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+   210→  )`,
+   211→  `CREATE TABLE IF NOT EXISTS "UsdtOrder" (
+   212→    "id" TEXT NOT NULL PRIMARY KEY,
+   213→    "ref" TEXT NOT NULL,
+   214→    "userId" TEXT,
+   215→    "productId" TEXT NOT NULL,
+   216→    "productTitle" TEXT NOT NULL,
+   217→    "contactName" TEXT NOT NULL DEFAULT '',
+   218→    "contactEmail" TEXT NOT NULL DEFAULT '',
+   219→    "expectedMicro" INTEGER NOT NULL,
+   220→    "currency" TEXT NOT NULL DEFAULT 'USDT',
+   221→    "network" TEXT NOT NULL DEFAULT 'TRON',
+   222→    "paymentMode" TEXT NOT NULL,
+   223→    "paymentAddress" TEXT NOT NULL,
+   224→    "addressIndex" INTEGER,
+   225→    "clientIp" TEXT NOT NULL DEFAULT '',
+   226→    "pricePerSession" REAL,
+   227→    "packageSessions" INTEGER,
+   228→    "baseAmount" REAL,
+   229→    "tierPercent" REAL,
+   230→    "discountCode" TEXT,
+   231→    "discountAmount" REAL,
+   232→    "discountType" TEXT,
+   233→    "discountValue" REAL,
+   234→    "paymentMethod" TEXT NOT NULL DEFAULT 'USDT_TRON',
+   235→    "receiptId" TEXT,
+   236→    "receiptStatus" TEXT,
+   237→    "receiptMime" TEXT,
+   238→    "receiptSize" INTEGER,
+   239→    "receiptFileName" TEXT,
+   240→    "receiptSubmittedAt" DATETIME,
+   241→    "receiptResubmits" INTEGER NOT NULL DEFAULT 0,
+   242→    "reviewedAt" DATETIME,
+   243→    "reviewedBy" TEXT,
+   244→    "rejectionReason" TEXT,
+   245→    "status" TEXT NOT NULL DEFAULT 'PENDING',
+   246→    "txHash" TEXT,
+   247→    "txAmountMicro" INTEGER,
+   248→    "txFrom" TEXT,
+   249→    "paidAt" DATETIME,
+   250→    "expiresAt" DATETIME NOT NULL,
+   251→    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+   252→    "updatedAt" DATETIME NOT NULL,
+   253→    CONSTRAINT "UsdtOrder_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE SET NULL ON UPDATE CASCADE
+   254→  )`,
+   255→  `CREATE TABLE IF NOT EXISTS "CourseClass" (
+   256→    "id" TEXT NOT NULL PRIMARY KEY,
+   257→    "slug" TEXT NOT NULL,
+   258→    "productId" TEXT NOT NULL,
+   259→    "title" TEXT NOT NULL,
+   260→    "shortDescription" TEXT NOT NULL DEFAULT '',
+   261→    "fullDescription" TEXT NOT NULL DEFAULT '',
+   262→    "category" TEXT NOT NULL DEFAULT 'beginner',
+   263→    "status" TEXT NOT NULL DEFAULT 'active',
+   264→    "featured" BOOLEAN NOT NULL DEFAULT 0,
+   265→    "color" TEXT NOT NULL DEFAULT 'sage',
+   266→    "classType" TEXT NOT NULL DEFAULT 'group',
+   267→    "level" TEXT NOT NULL DEFAULT 'All Levels',
+   268→    "registerLevels" TEXT NOT NULL DEFAULT '[]',
+   269→    "currency" TEXT NOT NULL DEFAULT 'USDT',
+   270→    "pricePerSession" REAL NOT NULL DEFAULT 0,
+   271→    "packageSessions" INTEGER NOT NULL DEFAULT 1,
+   272→    "packagePrice" REAL NOT NULL DEFAULT 0,
+   273→    "priceNote" TEXT NOT NULL DEFAULT '',
+   274→    "sessionDurationMin" INTEGER,
+   275→    "format" TEXT NOT NULL DEFAULT 'online',
+   276→    "maxStudents" INTEGER,
+   277→    "minStudents" INTEGER,
+   278→    "schedule" TEXT NOT NULL DEFAULT '',
+   279→    "startDate" DATETIME,
+   280→    "endDate" DATETIME,
+   281→    "timezone" TEXT NOT NULL DEFAULT '',
+   282→    "meta" TEXT NOT NULL DEFAULT '[]',
+   283→    "highlights" TEXT NOT NULL DEFAULT '[]',
+   284→    "requirements" TEXT NOT NULL DEFAULT '[]',
+   285→    "audience" TEXT NOT NULL DEFAULT '[]',
+   286→    "curriculum" TEXT NOT NULL DEFAULT '[]',
+   287→    "materials" TEXT NOT NULL DEFAULT '[]',
+   288→    "notes" TEXT NOT NULL DEFAULT '',
+   289→    "image" TEXT NOT NULL DEFAULT '',
+   290→    "videoUrl" TEXT NOT NULL DEFAULT '',
+   291→    "sortOrder" INTEGER NOT NULL DEFAULT 0,
+   292→    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+   293→    "updatedAt" DATETIME NOT NULL
+   294→  )`,
+   295→  `CREATE TABLE IF NOT EXISTS "PaymentEvent" (
+   296→    "id" TEXT NOT NULL PRIMARY KEY,
+   297→    "kind" TEXT NOT NULL,
+   298→    "orderRef" TEXT,
+   299→    "txHash" TEXT,
+   300→    "detail" TEXT NOT NULL DEFAULT '',
+   301→    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+   302→  )`,
+   303→  `CREATE TABLE IF NOT EXISTS "Discount" (
+   304→    "id" TEXT NOT NULL PRIMARY KEY,
+   305→    "code" TEXT NOT NULL,
+   306→    "type" TEXT NOT NULL DEFAULT 'percent',
+   307→    "value" REAL NOT NULL,
+   308→    "active" BOOLEAN NOT NULL DEFAULT 1,
+   309→    "startsAt" DATETIME,
+   310→    "endsAt" DATETIME,
+   311→    "classIds" TEXT NOT NULL DEFAULT '[]',
+   312→    "classTypes" TEXT NOT NULL DEFAULT '[]',
+   313→    "levels" TEXT NOT NULL DEFAULT '[]',
+   314→    "minSessions" INTEGER NOT NULL DEFAULT 1,
+   315→    "maxUses" INTEGER,
+   316→    "perCustomer" INTEGER NOT NULL DEFAULT 1,
+   317→    "note" TEXT NOT NULL DEFAULT '',
+   318→    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+   319→    "updatedAt" DATETIME NOT NULL,
+   320→    "deletedAt" DATETIME
+   321→  )`,
+   322→  `CREATE TABLE IF NOT EXISTS "DiscountRedemption" (
+   323→    "id" TEXT NOT NULL PRIMARY KEY,
+   324→    "discountId" TEXT NOT NULL,
+   325→    "orderRef" TEXT NOT NULL,
+   326→    "userEmail" TEXT NOT NULL,
+   327→    "amount" REAL NOT NULL,
+   328→    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+   329→    CONSTRAINT "DiscountRedemption_discountId_fkey" FOREIGN KEY ("discountId") REFERENCES "Discount" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+   330→  )`,
+   331→  `CREATE TABLE IF NOT EXISTS "ClassSchedule" (
+   332→    "id" TEXT NOT NULL PRIMARY KEY,
+   333→    "userId" TEXT NOT NULL,
+   334→    "classId" TEXT NOT NULL,
+   335→    "orderRef" TEXT,
+   336→    "registrationId" TEXT,
+   337→    "startAt" DATETIME NOT NULL,
+   338→    "endAt" DATETIME NOT NULL,
+   339→    "durationMin" INTEGER NOT NULL,
+   340→    "timezone" TEXT NOT NULL,
+   341→    "inputDate" TEXT,
+   342→    "inputTime" TEXT,
+   343→    "inputDay" TEXT,
+   344→    "note" TEXT,
+   345→    "status" TEXT NOT NULL DEFAULT 'PROPOSED',
+   346→    "createdBy" TEXT NOT NULL DEFAULT 'admin',
+   347→    "confirmedAt" DATETIME,
+   348→    "confirmedBy" TEXT,
+   349→    "cancelledAt" DATETIME,
+   350→    "cancelledBy" TEXT,
+   351→    "cancelReason" TEXT,
+   352→    "supersededById" TEXT,
+   353→    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+   354→    "updatedAt" DATETIME NOT NULL,
+   355→    CONSTRAINT "ClassSchedule_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+   356→    CONSTRAINT "ClassSchedule_classId_fkey" FOREIGN KEY ("classId") REFERENCES "CourseClass" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+   357→    CONSTRAINT "ClassSchedule_registrationId_fkey" FOREIGN KEY ("registrationId") REFERENCES "Registration" ("id") ON DELETE SET NULL ON UPDATE CASCADE,
+   358→    CONSTRAINT "ClassSchedule_supersededById_fkey" FOREIGN KEY ("supersededById") REFERENCES "ClassSchedule" ("id") ON DELETE SET NULL ON UPDATE CASCADE
+   359→  )`,
+   360→  `CREATE TABLE IF NOT EXISTS "ScheduleAudit" (
+   361→    "id" TEXT NOT NULL PRIMARY KEY,
+   362→    "scheduleId" TEXT NOT NULL,
+   363→    "action" TEXT NOT NULL,
+   364→    "actor" TEXT NOT NULL,
+   365→    "detail" TEXT NOT NULL DEFAULT '',
+   366→    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+   367→    CONSTRAINT "ScheduleAudit_scheduleId_fkey" FOREIGN KEY ("scheduleId") REFERENCES "ClassSchedule" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+   368→  )`,
+   369→  `CREATE TABLE IF NOT EXISTS "ScheduleNotification" (
+   370→    "id" TEXT NOT NULL PRIMARY KEY,
+   371→    "userId" TEXT NOT NULL,
+   372→    "scheduleId" TEXT,
+   373→    "kind" TEXT NOT NULL,
+   374→    "category" TEXT NOT NULL DEFAULT 'schedule',
+   375→    "orderRef" TEXT,
+   376→    "title" TEXT NOT NULL,
+   377→    "body" TEXT NOT NULL,
+   378→    "readAt" DATETIME,
+   379→    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+   380→    CONSTRAINT "ScheduleNotification_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+   381→    CONSTRAINT "ScheduleNotification_scheduleId_fkey" FOREIGN KEY ("scheduleId") REFERENCES "ClassSchedule" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+   382→  )`,
+   383→  `CREATE TABLE IF NOT EXISTS "BackupLog" (
+   384→    "id" TEXT NOT NULL PRIMARY KEY,
+   385→    "filename" TEXT NOT NULL,
+   386→    "filePath" TEXT NOT NULL,
+   387→    "sizeBytes" INTEGER,
+   388→    "status" TEXT NOT NULL DEFAULT 'STARTED',
+   389→    "trigger" TEXT NOT NULL DEFAULT 'MANUAL',
+   390→    "startedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+   391→    "completedAt" DATETIME,
+   392→    "durationMs" INTEGER,
+   393→    "error" TEXT
+   394→  )`,
+   395→  `CREATE TABLE IF NOT EXISTS "ErrorLog" (
+   396→    "id" TEXT NOT NULL PRIMARY KEY,
+   397→    "category" TEXT NOT NULL,
+   398→    "message" TEXT NOT NULL,
+   399→    "context" TEXT NOT NULL DEFAULT '',
+   400→    "statusCode" INTEGER,
+   401→    "refId" TEXT,
+   402→    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+   403→  )`,
+   404→  `CREATE TABLE IF NOT EXISTS "AuditLog" (
+   405→    "id" TEXT NOT NULL PRIMARY KEY,
+   406→    "actor" TEXT NOT NULL,
+   407→    "action" TEXT NOT NULL,
+   408→    "targetType" TEXT NOT NULL,
+   409→    "targetId" TEXT NOT NULL DEFAULT '',
+   410→    "meta" TEXT NOT NULL DEFAULT '',
+   411→    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+   412→  )`,
+   413→]
+   414→
+   415→// ایندکس‌ها — نام‌ها دقیقاً مطابق قرارداد Prisma تا با db push هم‌خوان بمانند
+   416→const CREATE_INDEXES: readonly string[] = [
+   417→  `CREATE INDEX IF NOT EXISTS "Registration_userId_idx" ON "Registration"("userId")`,
+   418→  `CREATE UNIQUE INDEX IF NOT EXISTS "NewsletterSubscriber_email_key" ON "NewsletterSubscriber"("email")`,
+   419→  `CREATE UNIQUE INDEX IF NOT EXISTS "Post_slug_key" ON "Post"("slug")`,
+   420→  `CREATE INDEX IF NOT EXISTS "Testimonial_status_featured_idx" ON "Testimonial"("status", "featured")`,
+   421→  `CREATE UNIQUE INDEX IF NOT EXISTS "ReviewLike_testimonialId_visitorId_key" ON "ReviewLike"("testimonialId", "visitorId")`,
+   422→  `CREATE INDEX IF NOT EXISTS "ReviewLike_visitorId_idx" ON "ReviewLike"("visitorId")`,
+   423→  `CREATE INDEX IF NOT EXISTS "FaqItem_published_sortOrder_idx" ON "FaqItem"("published", "sortOrder")`,
+   424→  `CREATE UNIQUE INDEX IF NOT EXISTS "Lesson_slug_key" ON "Lesson"("slug")`,
+   425→  `CREATE UNIQUE INDEX IF NOT EXISTS "User_email_key" ON "User"("email")`,
+   426→  `CREATE UNIQUE INDEX IF NOT EXISTS "User_uniqueCode_key" ON "User"("uniqueCode")`,
+   427→  `CREATE INDEX IF NOT EXISTS "User_createdAt_idx" ON "User"("createdAt")`,
+   428→  `CREATE UNIQUE INDEX IF NOT EXISTS "UserSession_tokenHash_key" ON "UserSession"("tokenHash")`,
+   429→  `CREATE INDEX IF NOT EXISTS "UserSession_userId_idx" ON "UserSession"("userId")`,
+   430→  `CREATE UNIQUE INDEX IF NOT EXISTS "PasswordResetToken_tokenHash_key" ON "PasswordResetToken"("tokenHash")`,
+   431→  `CREATE INDEX IF NOT EXISTS "PasswordResetToken_userId_idx" ON "PasswordResetToken"("userId")`,
+   432→  `CREATE UNIQUE INDEX IF NOT EXISTS "UsdtOrder_ref_key" ON "UsdtOrder"("ref")`,
+   433→  `CREATE INDEX IF NOT EXISTS "UsdtOrder_userId_idx" ON "UsdtOrder"("userId")`,
+   434→  `CREATE UNIQUE INDEX IF NOT EXISTS "UsdtOrder_txHash_key" ON "UsdtOrder"("txHash")`,
+   435→  `CREATE UNIQUE INDEX IF NOT EXISTS "UsdtOrder_addressIndex_key" ON "UsdtOrder"("addressIndex")`,
+   436→  `CREATE UNIQUE INDEX IF NOT EXISTS "UsdtOrder_receiptId_key" ON "UsdtOrder"("receiptId")`,
+   437→  `CREATE INDEX IF NOT EXISTS "UsdtOrder_status_expiresAt_idx" ON "UsdtOrder"("status", "expiresAt")`,
+   438→  `CREATE INDEX IF NOT EXISTS "UsdtOrder_paymentAddress_idx" ON "UsdtOrder"("paymentAddress")`,
+   439→  `CREATE INDEX IF NOT EXISTS "UsdtOrder_paymentMethod_status_idx" ON "UsdtOrder"("paymentMethod", "status")`,
+   440→  `CREATE UNIQUE INDEX IF NOT EXISTS "CourseClass_slug_key" ON "CourseClass"("slug")`,
+   441→  `CREATE UNIQUE INDEX IF NOT EXISTS "CourseClass_productId_key" ON "CourseClass"("productId")`,
+   442→  `CREATE INDEX IF NOT EXISTS "CourseClass_status_idx" ON "CourseClass"("status")`,
+   443→  `CREATE INDEX IF NOT EXISTS "CourseClass_classType_idx" ON "CourseClass"("classType")`,
+   444→  `CREATE INDEX IF NOT EXISTS "CourseClass_category_idx" ON "CourseClass"("category")`,
+   445→  `CREATE INDEX IF NOT EXISTS "CourseClass_sortOrder_idx" ON "CourseClass"("sortOrder")`,
+   446→  `CREATE INDEX IF NOT EXISTS "PaymentEvent_orderRef_idx" ON "PaymentEvent"("orderRef")`,
+   447→  `CREATE INDEX IF NOT EXISTS "PaymentEvent_txHash_idx" ON "PaymentEvent"("txHash")`,
+   448→  `CREATE INDEX IF NOT EXISTS "PaymentEvent_kind_createdAt_idx" ON "PaymentEvent"("kind", "createdAt")`,
+   449→  `CREATE UNIQUE INDEX IF NOT EXISTS "Discount_code_key" ON "Discount"("code")`,
+   450→  `CREATE INDEX IF NOT EXISTS "Discount_active_idx" ON "Discount"("active")`,
+   451→  `CREATE INDEX IF NOT EXISTS "DiscountRedemption_discountId_idx" ON "DiscountRedemption"("discountId")`,
+   452→  `CREATE INDEX IF NOT EXISTS "DiscountRedemption_userEmail_idx" ON "DiscountRedemption"("userEmail")`,
+   453→  `CREATE INDEX IF NOT EXISTS "DiscountRedemption_orderRef_idx" ON "DiscountRedemption"("orderRef")`,
+   454→  `CREATE UNIQUE INDEX IF NOT EXISTS "ClassSchedule_userId_classId_startAt_key" ON "ClassSchedule"("userId", "classId", "startAt")`,
+   455→  `CREATE INDEX IF NOT EXISTS "ClassSchedule_status_startAt_idx" ON "ClassSchedule"("status", "startAt")`,
+   456→  `CREATE INDEX IF NOT EXISTS "ClassSchedule_userId_status_idx" ON "ClassSchedule"("userId", "status")`,
+   457→  `CREATE INDEX IF NOT EXISTS "ClassSchedule_classId_status_idx" ON "ClassSchedule"("classId", "status")`,
+   458→  `CREATE INDEX IF NOT EXISTS "ClassSchedule_orderRef_idx" ON "ClassSchedule"("orderRef")`,
+   459→  `CREATE INDEX IF NOT EXISTS "ScheduleAudit_scheduleId_createdAt_idx" ON "ScheduleAudit"("scheduleId", "createdAt")`,
+   460→  `CREATE INDEX IF NOT EXISTS "ScheduleNotification_userId_readAt_idx" ON "ScheduleNotification"("userId", "readAt")`,
+   461→  `CREATE INDEX IF NOT EXISTS "ScheduleNotification_userId_category_createdAt_idx" ON "ScheduleNotification"("userId", "category", "createdAt")`,
+   462→  `CREATE INDEX IF NOT EXISTS "BackupLog_status_startedAt_idx" ON "BackupLog"("status", "startedAt")`,
+   463→  `CREATE INDEX IF NOT EXISTS "BackupLog_trigger_startedAt_idx" ON "BackupLog"("trigger", "startedAt")`,
+   464→  `CREATE INDEX IF NOT EXISTS "ErrorLog_category_createdAt_idx" ON "ErrorLog"("category", "createdAt")`,
+   465→  `CREATE INDEX IF NOT EXISTS "AuditLog_createdAt_idx" ON "AuditLog"("createdAt")`,
+   466→  `CREATE INDEX IF NOT EXISTS "AuditLog_action_createdAt_idx" ON "AuditLog"("action", "createdAt")`,
+   467→]
+   468→
+   469→// ---------------------------------------------------------------------------
+   470→// ترمیم ستون‌های جدول‌های «موجودِ کهنه» — فقط ADD COLUMN با DEFAULT امن
+   471→// (محدودیت SQLite: ستون NOT NULL فقط با DEFAULT قابل‌اضافه است)
+   472→// ---------------------------------------------------------------------------
+   473→const ALTER_COLUMNS: Readonly<Record<string, readonly string[]>> = {
+   474→  User: [
+   475→    'ALTER TABLE "User" ADD COLUMN "dateOfBirth" DATETIME',
+   476→    'ALTER TABLE "User" ADD COLUMN "country" TEXT NOT NULL DEFAULT \'\'',
+   477→    'ALTER TABLE "User" ADD COLUMN "countryCode" TEXT NOT NULL DEFAULT \'\'',
+   478→    'ALTER TABLE "User" ADD COLUMN "phone" TEXT',
+   479→    'ALTER TABLE "User" ADD COLUMN "telegramUsername" TEXT',
+   480→    'ALTER TABLE "User" ADD COLUMN "telegramId" TEXT',
+   481→    'ALTER TABLE "User" ADD COLUMN "uniqueCode" TEXT',
+   482→    'ALTER TABLE "User" ADD COLUMN "lastLoginAt" DATETIME',
+   483→  ],
+   484→  UserSession: ['ALTER TABLE "UserSession" ADD COLUMN "userAgent" TEXT NOT NULL DEFAULT \'\''],
+   485→  PasswordResetToken: ['ALTER TABLE "PasswordResetToken" ADD COLUMN "usedAt" DATETIME'],
+   486→  Registration: [
+   487→    'ALTER TABLE "Registration" ADD COLUMN "userId" TEXT',
+   488→    'ALTER TABLE "Registration" ADD COLUMN "classType" TEXT NOT NULL DEFAULT \'group\'',
+   489→    'ALTER TABLE "Registration" ADD COLUMN "deletedAt" DATETIME',
+   490→    'ALTER TABLE "Registration" ADD COLUMN "classTitle" TEXT',
+   491→    'ALTER TABLE "Registration" ADD COLUMN "schedule" TEXT',
+   492→    'ALTER TABLE "Registration" ADD COLUMN "goal" TEXT',
+   493→    'ALTER TABLE "Registration" ADD COLUMN "message" TEXT',
+   494→    'ALTER TABLE "Registration" ADD COLUMN "timezone" TEXT NOT NULL DEFAULT \'\'',
+   495→    'ALTER TABLE "Registration" ADD COLUMN "preferredDays" TEXT NOT NULL DEFAULT \'[]\'',
+   496→    'ALTER TABLE "Registration" ADD COLUMN "preferredTimes" TEXT NOT NULL DEFAULT \'[]\'',
+   497→    'ALTER TABLE "Registration" ADD COLUMN "daysPerWeek" INTEGER',
+   498→    'ALTER TABLE "Registration" ADD COLUMN "scheduleAck" BOOLEAN NOT NULL DEFAULT 0',
+   499→  ],
+   500→  UsdtOrder: [
+   501→    'ALTER TABLE "UsdtOrder" ADD COLUMN "userId" TEXT',
+   502→    'ALTER TABLE "UsdtOrder" ADD COLUMN "clientIp" TEXT NOT NULL DEFAULT \'\'',
+   503→    'ALTER TABLE "UsdtOrder" ADD COLUMN "pricePerSession" REAL',
+   504→    'ALTER TABLE "UsdtOrder" ADD COLUMN "packageSessions" INTEGER',
+   505→    'ALTER TABLE "UsdtOrder" ADD COLUMN "baseAmount" REAL',
+   506→    'ALTER TABLE "UsdtOrder" ADD COLUMN "tierPercent" REAL',
+   507→    'ALTER TABLE "UsdtOrder" ADD COLUMN "discountCode" TEXT',
+   508→    'ALTER TABLE "UsdtOrder" ADD COLUMN "discountAmount" REAL',
+   509→    'ALTER TABLE "UsdtOrder" ADD COLUMN "discountType" TEXT',
+   510→    'ALTER TABLE "UsdtOrder" ADD COLUMN "discountValue" REAL',
+   511→    'ALTER TABLE "UsdtOrder" ADD COLUMN "paymentMethod" TEXT NOT NULL DEFAULT \'USDT_TRON\'',
+   512→    'ALTER TABLE "UsdtOrder" ADD COLUMN "receiptId" TEXT',
+   513→    'ALTER TABLE "UsdtOrder" ADD COLUMN "receiptStatus" TEXT',
+   514→    'ALTER TABLE "UsdtOrder" ADD COLUMN "receiptMime" TEXT',
+   515→    'ALTER TABLE "UsdtOrder" ADD COLUMN "receiptSize" INTEGER',
+   516→    'ALTER TABLE "UsdtOrder" ADD COLUMN "receiptFileName" TEXT',
+   517→    'ALTER TABLE "UsdtOrder" ADD COLUMN "receiptSubmittedAt" DATETIME',
+   518→    'ALTER TABLE "UsdtOrder" ADD COLUMN "receiptResubmits" INTEGER NOT NULL DEFAULT 0',
+   519→    'ALTER TABLE "UsdtOrder" ADD COLUMN "reviewedAt" DATETIME',
+   520→    'ALTER TABLE "UsdtOrder" ADD COLUMN "reviewedBy" TEXT',
+   521→    'ALTER TABLE "UsdtOrder" ADD COLUMN "rejectionReason" TEXT',
+   522→    'ALTER TABLE "UsdtOrder" ADD COLUMN "txAmountMicro" INTEGER',
+   523→    'ALTER TABLE "UsdtOrder" ADD COLUMN "txFrom" TEXT',
+   524→  ],
+   525→  CourseClass: [
+   526→    'ALTER TABLE "CourseClass" ADD COLUMN "shortDescription" TEXT NOT NULL DEFAULT \'\'',
+   527→    'ALTER TABLE "CourseClass" ADD COLUMN "fullDescription" TEXT NOT NULL DEFAULT \'\'',
+   528→    'ALTER TABLE "CourseClass" ADD COLUMN "category" TEXT NOT NULL DEFAULT \'beginner\'',
+   529→    'ALTER TABLE "CourseClass" ADD COLUMN "status" TEXT NOT NULL DEFAULT \'active\'',
+   530→    'ALTER TABLE "CourseClass" ADD COLUMN "featured" BOOLEAN NOT NULL DEFAULT 0',
+   531→    'ALTER TABLE "CourseClass" ADD COLUMN "color" TEXT NOT NULL DEFAULT \'sage\'',
+   532→    'ALTER TABLE "CourseClass" ADD COLUMN "classType" TEXT NOT NULL DEFAULT \'group\'',
+   533→    'ALTER TABLE "CourseClass" ADD COLUMN "level" TEXT NOT NULL DEFAULT \'All Levels\'',
+   534→    'ALTER TABLE "CourseClass" ADD COLUMN "registerLevels" TEXT NOT NULL DEFAULT \'[]\'',
+   535→    'ALTER TABLE "CourseClass" ADD COLUMN "currency" TEXT NOT NULL DEFAULT \'USDT\'',
+   536→    'ALTER TABLE "CourseClass" ADD COLUMN "pricePerSession" REAL NOT NULL DEFAULT 0',
+   537→    'ALTER TABLE "CourseClass" ADD COLUMN "packageSessions" INTEGER NOT NULL DEFAULT 1',
+   538→    'ALTER TABLE "CourseClass" ADD COLUMN "packagePrice" REAL NOT NULL DEFAULT 0',
+   539→    'ALTER TABLE "CourseClass" ADD COLUMN "priceNote" TEXT NOT NULL DEFAULT \'\'',
+   540→    'ALTER TABLE "CourseClass" ADD COLUMN "sessionDurationMin" INTEGER',
+   541→    'ALTER TABLE "CourseClass" ADD COLUMN "format" TEXT NOT NULL DEFAULT \'online\'',
+   542→    'ALTER TABLE "CourseClass" ADD COLUMN "maxStudents" INTEGER',
+   543→    'ALTER TABLE "CourseClass" ADD COLUMN "minStudents" INTEGER',
+   544→    'ALTER TABLE "CourseClass" ADD COLUMN "schedule" TEXT NOT NULL DEFAULT \'\'',
+   545→    'ALTER TABLE "CourseClass" ADD COLUMN "startDate" DATETIME',
+   546→    'ALTER TABLE "CourseClass" ADD COLUMN "endDate" DATETIME',
+   547→    'ALTER TABLE "CourseClass" ADD COLUMN "timezone" TEXT NOT NULL DEFAULT \'\'',
+   548→    'ALTER TABLE "CourseClass" ADD COLUMN "meta" TEXT NOT NULL DEFAULT \'[]\'',
+   549→    'ALTER TABLE "CourseClass" ADD COLUMN "highlights" TEXT NOT NULL DEFAULT \'[]\'',
+   550→    'ALTER TABLE "CourseClass" ADD COLUMN "requirements" TEXT NOT NULL DEFAULT \'[]\'',
+   551→    'ALTER TABLE "CourseClass" ADD COLUMN "audience" TEXT NOT NULL DEFAULT \'[]\'',
+   552→    'ALTER TABLE "CourseClass" ADD COLUMN "curriculum" TEXT NOT NULL DEFAULT \'[]\'',
+   553→    'ALTER TABLE "CourseClass" ADD COLUMN "materials" TEXT NOT NULL DEFAULT \'[]\'',
+   554→    'ALTER TABLE "CourseClass" ADD COLUMN "notes" TEXT NOT NULL DEFAULT \'\'',
+   555→    'ALTER TABLE "CourseClass" ADD COLUMN "image" TEXT NOT NULL DEFAULT \'\'',
+   556→    'ALTER TABLE "CourseClass" ADD COLUMN "videoUrl" TEXT NOT NULL DEFAULT \'\'',
+   557→    'ALTER TABLE "CourseClass" ADD COLUMN "sortOrder" INTEGER NOT NULL DEFAULT 0',
+   558→  ],
+   559→  Discount: [
+   560→    'ALTER TABLE "Discount" ADD COLUMN "startsAt" DATETIME',
+   561→    'ALTER TABLE "Discount" ADD COLUMN "endsAt" DATETIME',
+   562→    'ALTER TABLE "Discount" ADD COLUMN "classIds" TEXT NOT NULL DEFAULT \'[]\'',
+   563→    'ALTER TABLE "Discount" ADD COLUMN "classTypes" TEXT NOT NULL DEFAULT \'[]\'',
+   564→    'ALTER TABLE "Discount" ADD COLUMN "levels" TEXT NOT NULL DEFAULT \'[]\'',
+   565→    'ALTER TABLE "Discount" ADD COLUMN "minSessions" INTEGER NOT NULL DEFAULT 1',
+   566→    'ALTER TABLE "Discount" ADD COLUMN "maxUses" INTEGER',
+   567→    'ALTER TABLE "Discount" ADD COLUMN "perCustomer" INTEGER NOT NULL DEFAULT 1',
+   568→    'ALTER TABLE "Discount" ADD COLUMN "note" TEXT NOT NULL DEFAULT \'\'',
+   569→    'ALTER TABLE "Discount" ADD COLUMN "deletedAt" DATETIME',
+   570→  ],
+   571→  ClassSchedule: [
+   572→    'ALTER TABLE "ClassSchedule" ADD COLUMN "orderRef" TEXT',
+   573→    'ALTER TABLE "ClassSchedule" ADD COLUMN "registrationId" TEXT',
+   574→    'ALTER TABLE "ClassSchedule" ADD COLUMN "inputDate" TEXT',
+   575→    'ALTER TABLE "ClassSchedule" ADD COLUMN "inputTime" TEXT',
+   576→    'ALTER TABLE "ClassSchedule" ADD COLUMN "inputDay" TEXT',
+   577→    'ALTER TABLE "ClassSchedule" ADD COLUMN "note" TEXT',
+   578→    'ALTER TABLE "ClassSchedule" ADD COLUMN "createdBy" TEXT NOT NULL DEFAULT \'admin\'',
+   579→    'ALTER TABLE "ClassSchedule" ADD COLUMN "confirmedAt" DATETIME',
+   580→    'ALTER TABLE "ClassSchedule" ADD COLUMN "confirmedBy" TEXT',
+   581→    'ALTER TABLE "ClassSchedule" ADD COLUMN "cancelledAt" DATETIME',
+   582→    'ALTER TABLE "ClassSchedule" ADD COLUMN "cancelledBy" TEXT',
+   583→    'ALTER TABLE "ClassSchedule" ADD COLUMN "cancelReason" TEXT',
+   584→    'ALTER TABLE "ClassSchedule" ADD COLUMN "supersededById" TEXT',
+   585→  ],
+   586→  ScheduleNotification: [
+   587→    'ALTER TABLE "ScheduleNotification" ADD COLUMN "scheduleId" TEXT',
+   588→    'ALTER TABLE "ScheduleNotification" ADD COLUMN "category" TEXT NOT NULL DEFAULT \'schedule\'',
+   589→    'ALTER TABLE "ScheduleNotification" ADD COLUMN "orderRef" TEXT',
+   590→    'ALTER TABLE "ScheduleNotification" ADD COLUMN "readAt" DATETIME',
+   591→  ],
+   592→  ErrorLog: [
+   593→    'ALTER TABLE "ErrorLog" ADD COLUMN "context" TEXT NOT NULL DEFAULT \'\'',
+   594→    'ALTER TABLE "ErrorLog" ADD COLUMN "statusCode" INTEGER',
+   595→    'ALTER TABLE "ErrorLog" ADD COLUMN "refId" TEXT',
+   596→  ],
+   597→  Testimonial: [
+   598→    'ALTER TABLE "Testimonial" ADD COLUMN "role" TEXT',
+   599→    'ALTER TABLE "Testimonial" ADD COLUMN "featured" BOOLEAN NOT NULL DEFAULT 0',
+   600→    'ALTER TABLE "Testimonial" ADD COLUMN "likeCount" INTEGER NOT NULL DEFAULT 0',
+   601→    'ALTER TABLE "Testimonial" ADD COLUMN "deletedAt" DATETIME',
+   602→  ],
+   603→  FaqItem: ['ALTER TABLE "FaqItem" ADD COLUMN "deletedAt" DATETIME'],
+   604→  Teacher: [
+   605→    'ALTER TABLE "Teacher" ADD COLUMN "resume" TEXT NOT NULL DEFAULT \'\'',
+   606→    'ALTER TABLE "Teacher" ADD COLUMN "experienceYears" INTEGER NOT NULL DEFAULT 0',
+   607→    'ALTER TABLE "Teacher" ADD COLUMN "studentsTaught" INTEGER NOT NULL DEFAULT 0',
+   608→    'ALTER TABLE "Teacher" ADD COLUMN "certificates" TEXT NOT NULL DEFAULT \'\'',
+   609→    'ALTER TABLE "Teacher" ADD COLUMN "samples" TEXT NOT NULL DEFAULT \'[]\'',
+   610→  ],
+   611→  Lesson: [
+   612→    'ALTER TABLE "Lesson" ADD COLUMN "text" TEXT NOT NULL DEFAULT \'\'',
+   613→    'ALTER TABLE "Lesson" ADD COLUMN "subtitle" TEXT NOT NULL DEFAULT \'\'',
+   614→    'ALTER TABLE "Lesson" ADD COLUMN "big" TEXT NOT NULL DEFAULT \'\'',
+   615→    'ALTER TABLE "Lesson" ADD COLUMN "small" TEXT NOT NULL DEFAULT \'\'',
+   616→    'ALTER TABLE "Lesson" ADD COLUMN "tag" TEXT NOT NULL DEFAULT \'\'',
+   617→    'ALTER TABLE "Lesson" ADD COLUMN "category" TEXT NOT NULL DEFAULT \'vocabulary\'',
+   618→    'ALTER TABLE "Lesson" ADD COLUMN "color" TEXT NOT NULL DEFAULT \'sage\'',
+   619→    'ALTER TABLE "Lesson" ADD COLUMN "action" TEXT NOT NULL DEFAULT \'Learn\'',
+   620→    'ALTER TABLE "Lesson" ADD COLUMN "isVideo" BOOLEAN NOT NULL DEFAULT 0',
+   621→    'ALTER TABLE "Lesson" ADD COLUMN "words" TEXT NOT NULL DEFAULT \'[]\'',
+   622→  ],
+   623→  Post: [
+   624→    'ALTER TABLE "Post" ADD COLUMN "emoji" TEXT NOT NULL DEFAULT \'📝\'',
+   625→    'ALTER TABLE "Post" ADD COLUMN "color" TEXT NOT NULL DEFAULT \'sage\'',
+   626→    'ALTER TABLE "Post" ADD COLUMN "image" TEXT',
+   627→    'ALTER TABLE "Post" ADD COLUMN "views" INTEGER NOT NULL DEFAULT 0',
+   628→  ],
+   629→  SupportMessage: ['ALTER TABLE "SupportMessage" ADD COLUMN "topic" TEXT NOT NULL DEFAULT \'general\''],
+   630→  PaymentEvent: ['ALTER TABLE "PaymentEvent" ADD COLUMN "detail" TEXT NOT NULL DEFAULT \'\''],
+   631→  BackupLog: [
+   632→    'ALTER TABLE "BackupLog" ADD COLUMN "sizeBytes" INTEGER',
+   633→    'ALTER TABLE "BackupLog" ADD COLUMN "durationMs" INTEGER',
+   634→    'ALTER TABLE "BackupLog" ADD COLUMN "error" TEXT',
+   635→  ],
+   636→  AuditLog: [
+   637→    'ALTER TABLE "AuditLog" ADD COLUMN "targetId" TEXT NOT NULL DEFAULT \'\'',
+   638→    'ALTER TABLE "AuditLog" ADD COLUMN "meta" TEXT NOT NULL DEFAULT \'\'',
+   639→  ],
+   640→  ScheduleAudit: ['ALTER TABLE "ScheduleAudit" ADD COLUMN "detail" TEXT NOT NULL DEFAULT \'\''],
+   641→}
+   642→
+   643→export interface EnsureSchemaResult {
+   644→  createdTables: string[]
+   645→  addedColumns: string[]
+   646→  ensuredIndexes: number
+   647→  errors: string[]
+   648→}
+   649→
+   650→async function runEnsureSchema(): Promise<EnsureSchemaResult> {
+   651→  const result: EnsureSchemaResult = { createdTables: [], addedColumns: [], ensuredIndexes: 0, errors: [] }
+   652→
+   653→  // فهرست جدول‌های پیش از اجرا — برای گزارش دقیق «چه جدولی ساخته شد»
+   654→  let before: Set<string>
+   655→  try {
+   656→    const rows = await db.$queryRawUnsafe<Array<{ name: string }>>(`SELECT name FROM sqlite_master WHERE type='table'`)
+   657→    before = new Set(Array.isArray(rows) ? rows.map((r) => String(r.name)) : [])
+   658→  } catch {
+   659→    before = new Set()
+   660→  }
+   661→
+   662→  // ۱) جدول‌های غایب ساخته می‌شوند (IF NOT EXISTS — اجرای دوباره بی‌اثر)
+   663→  for (const ddl of CREATE_TABLES) {
+   664→    const name = ddl.match(/CREATE TABLE IF NOT EXISTS "([^"]+)"/)?.[1] ?? ''
+   665→    try {
+   666→      await db.$executeRawUnsafe(ddl)
+   667→      if (name && !before.has(name)) result.createdTables.push(name)
+   668→    } catch (e) {
+   669→      result.errors.push(`create-table: ${e instanceof Error ? e.message : String(e)}`.slice(0, 200))
+   670→    }
+   671→  }
+   672→
+   673→  // ۲) ایندکس‌ها تضمین می‌شوند — شکست یکی (مثلاً دادهٔ تکراری قدیمی) بقیه را نمی‌شکند
+   674→  for (const ddl of CREATE_INDEXES) {
+   675→    try {
+   676→      await db.$executeRawUnsafe(ddl)
+   677→      result.ensuredIndexes++
+   678→    } catch (e) {
+   679→      result.errors.push(`index: ${e instanceof Error ? e.message : String(e)}`.slice(0, 200))
+   680→    }
+   681→  }
+   682→
+   683→  // ۳) ستون‌های غایب جدول‌های موجود (بازیابی‌شده از بکاپ کهنه) اضافه می‌شوند
+   684→  for (const [table, statements] of Object.entries(ALTER_COLUMNS)) {
+   685→    let existing: string[] = []
+   686→    try {
+   687→      const rows = await db.$queryRawUnsafe<Array<{ name: string }>>(`PRAGMA table_info("${table}")`)
+   688→      existing = Array.isArray(rows) ? rows.map((r) => String(r.name)) : []
+   689→    } catch {
+   690→      continue // جدول اصلاً موجود نیست — CREATE بالا هندل کرده
+   691→    }
+   692→    if (existing.length === 0) continue
+   693→    for (const stmt of statements) {
+   694→      const col = stmt.match(/ADD COLUMN\s+"([^"]+)"/)?.[1]
+   695→      if (!col || existing.includes(col)) continue
+   696→      try {
+   697→        await db.$executeRawUnsafe(stmt)
+   698→        result.addedColumns.push(`${table}.${col}`)
+   699→      } catch (e) {
+   700→        result.errors.push(`alter ${table}.${col}: ${e instanceof Error ? e.message : String(e)}`.slice(0, 200))
+   701→      }
+   702→    }
+   703→  }
+   704→
+   705→  return result
+   706→}
+   707→
+   708→// ---------------------------------------------------------------------------
+   709→// درگاه عمومی — dedupe هم‌زمانی + دفترچهٔ یک‌بار در هر پروسه (مگر اجبار)
+   710→// ---------------------------------------------------------------------------
+   711→
+   712→let inFlight: Promise<EnsureSchemaResult> | null = null
+   713→let lastRunAt = 0
+   714→const RE_RUN_AFTER_MS = 60_000 // پس از یک اجرای موفق، حداکثر یک‌بار در دقیقه دوباره
+   715→
+   716→export async function ensureSchema(opts?: { force?: boolean; reason?: string }): Promise<EnsureSchemaResult> {
+   717→  const now = Date.now()
+   718→  if (!opts?.force && inFlight) return inFlight
+   719→  if (!opts?.force && now - lastRunAt < RE_RUN_AFTER_MS) {
+   720→    return { createdTables: [], addedColumns: [], ensuredIndexes: 0, errors: [] }
+   721→  }
+   722→  inFlight = runEnsureSchema()
+   723→    .then((r) => {
+   724→      lastRunAt = Date.now()
+   725→      if (r.createdTables.length > 0 || r.addedColumns.length > 0) {
+   726→        console.warn(
+   727→          `[ensure-schema] 🔧 self-healing applied (${opts?.reason ?? 'runtime'}): ` +
+   728→            `tables=[${r.createdTables.join(', ') || 'none'}] columns=[${r.addedColumns.join(', ') || 'none'}]` +
+   729→            (r.errors.length ? ` errors=${r.errors.length}` : '')
+   730→        )
+   731→      }
+   732→      return r
+   733→    })
+   734→    .finally(() => {
+   735→      inFlight = null
+   736→    })
+   737→  return inFlight
+   738→}
+   739→

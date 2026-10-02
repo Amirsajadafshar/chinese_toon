@@ -1,0 +1,705 @@
+     1→     1→// ---------------------------------------------------------------------------
+     2→     2→// 💳 سرویس سفارش‌ها و پرداخت دستی کارت بانکی (فاز ۵۹)
+     3→     3→//
+     4→     4→// از این فاز، روشِ فعالِ پرداخت «انتقال دستی بانکی + آپلود رسید + تأیید ادمین»
+     5→     5→// است. جریانِ آنلاینِ قبلی (USDT/TRON) از جریانِ خرید حذف شده؛ ردیف‌های قدیمی
+     6→     6→// و اسنپ‌شات‌هایشان در همان جدول حفظ می‌شوند (paymentMethod = USDT_TRON).
+     7→     7→//
+     8→     8→// اصول سخت‌گیرانهٔ این سرویس:
+     9→     9→//  ۱) قیمت/مبلغ هرگز از مرورگر پذیرفته نمی‌شود — فقط productId و «کدِ» تخفیف
+    10→    10→//     می‌آید؛ مبلغ نهایی همیشه سمت سرور با موتور قیمت‌گذاری محاسبه و در
+    11→    11→//     اسنپ‌شات سفارش ذخیره می‌شود. مشتری باید «دقیقاً» مبلغ نهایی را واریز کند.
+    12→    12→//  ۲) تأیید پرداخت فقط توسط ادمین و فقط پس از دیدنِ رسید انجام می‌شود
+    13→    13→//     (APPROVE) — هیچ مسیر خودکاری برای PAID وجود ندارد و تأییدِ تکراری با
+    14→    14→//     گارد وضعیت‌محورِ updateMany غیرممکن است.
+    15→    15→//  ۳) ضد ارسال تکراری: سفارشِ بازِ همان محصول در پنجرهٔ کوتاه دوباره ساخته
+    16→    16→//     نمی‌شود؛ رسیدِ در انتظارِ بررسی هم دوباره پذیرفته نمی‌شود (۴۰۹ شفاف).
+    17→    17→//  ۴) هیچ دسترسی عمومی برای تغییر وضعیت وجود ندارد؛ ادمین فقط تأیید/ردّ/لغو.
+    18→    18→//  ۵) چرخهٔ حیاتِ جریان دستی:
+    19→    19→//     PENDING → RECEIPT_SUBMITTED → PAID | REJECTED → (ارسال دوبارهٔ رسید) → RECEIPT_SUBMITTED
+    20→    20→//     PENDING → CANCELLED (ادمین) — و PENDINGِ منقضی در نمایش EXPIRED است.
+    21→    21→//     RECEIPT_SUBMITTED هرگز منقضی نمی‌شود؛ تصمیم با انسان است نه تایمر.
+    22→    22→//  ۶) وضعیت‌های تاریخیِ USDT (DETECTED/UNDERPAID/EXPIRED) فقط برای ردیف‌های
+    23→    23→//     قدیمی معتبرند و در جریان جدید ساخته نمی‌شوند.
+    24→    24→// ---------------------------------------------------------------------------
+    25→    25→
+    26→    26→import { randomBytes } from 'crypto'
+    27→    27→import type { PrismaClient } from '@prisma/client'
+    28→    28→import { db } from '@/lib/db'
+    29→    29→import {
+    30→    30→  findProductAsync,
+    31→    31→  usdToMicro,
+    32→    32→  microToDisplay,
+    33→    33→  type PaymentProduct,
+    34→    34→} from './config'
+    35→    35→import { calculatePrice } from '@/lib/pricing'
+    36→    36→import { deriveOrderStatus } from '@/lib/order-status'
+    37→    37→import { notifyUser, notifyOrderEvent } from '@/lib/notifications'
+    38→    38→import { getBankCardSettings, isBankCardReady } from '@/lib/payment-settings'
+    39→    39→import { saveReceiptFile, deleteReceiptFile, type ReceiptMime } from '@/lib/receipts'
+    40→    40→
+    41→    41→// دیتابیس در db.ts همیشه کلاینت دارد (گارد داخلی با ری‌لود کلاینت قدیمی)؛
+    42→    42→// از نظر تایپ ممکن است undefined بیاید — این alias تایپ را متمرکز حل می‌کند
+    43→    43→const database = db as PrismaClient
+    44→    44→
+    45→    45→// سفارشِ «باز» = هنوز تصمیم نهایی نگرفته. PENDING (وظیفهٔ پرداخت مشتری) و
+    46→    46→// RECEIPT_SUBMITTED (در انتظار بررسی ادمین) هر دو سقف سفارشِ باز را اشغال
+    47→    47→// می‌کنند؛ فقط PENDING منقضی می‌شود.
+    48→    48→const ACTIVE_STATUSES = ['PENDING', 'DETECTED', 'RECEIPT_SUBMITTED'] as const
+    49→    49→
+    50→    50→// ⏱️ پنجرهٔ ضد ارسالِ تکراری (idempotency): اگر همان کاربر همان محصول را در
+    51→    51→// این بازه دوباره سفارش دهد (مثلاً دابل‌کلیک)، همان سفارشِ بازِ قبلی برمی‌گردد
+    52→    52→// — نه یک سفارش تازه. تصمیمِ نهایی داخل تراکنش دیتابیس است؛ مرورگر هرگز
+    53→    53→// قابل‌اعتماد نیست و دور زدنِ دکمهٔ UI هم محافظت نمی‌شکند.
+    54→    54→const ORDER_IDEMPOTENCY_MS = 120_000
+    55→    55→
+    56→    56→// سقف سفارش باز برای هر IP — ضد آشغال‌کردن جدول
+    57→    57→export const MAX_OPEN_ORDERS_PER_IP = 5
+    58→    58→// 🛡️ سقف سفارش باز برای هر کاربر: حتی با چرخش IP، یک حساب نمی‌تواند
+    59→    59→// بیش از این تعداد سفارش فعال داشته باشد (ضد سوءاستفادهٔ API)
+    60→    60→export const MAX_OPEN_ORDERS_PER_USER = 5
+    61→    61→
+    62→    62→// ⏳ مهلت پرداخت دستی — ۷ روز فرصت برای واریز و ارسال رسید؛ بعد از آن
+    63→    63→// سفارشِ پرداخت‌نشده در نمایش EXPIRED است (RECEIPT_SUBMITTED هرگز منقضی نمی‌شود)
+    64→    64→const MANUAL_ORDER_TTL_MS = 7 * 24 * 60 * 60 * 1000
+    65→    65→
+    66→    66→export class PaymentNotConfiguredError extends Error {}
+    67→    67→export class ProductNotFoundError extends Error {}
+    68→    68→export class OrderLimitError extends Error {}
+    69→    69→export class OrderBusyError extends Error {}
+    70→    70→
+    71→    71→/** 🎟️ کد تخفیف بین پیش‌نمایش چک‌اوت و ساخت سفارش تمام/منقضی/غیرفعال شد
+    72→    72→ *  → ۴۰۹ شفاف به مشتری (سفارش هرگز «بی‌صدا» با قیمت کامل ساخته نمی‌شود) */
+    73→    73→export class DiscountExhaustedError extends Error {}
+    74→    74→
+    75→    75→/** درخواستِ تکراریِ سفارشِ همان محصول — ref سفارشِ موجودِ باز برمی‌گردد */
+    76→    76→export class DuplicateRecentOrderError extends Error {
+    77→    77→  constructor(public readonly existingRef: string) {
+    78→    78→    super('Duplicate recent order for the same product')
+    79→    79→  }
+    80→    80→}
+    81→    81→
+    82→    82→// تشخیص تعارض نوشتن تراکنش پرستما (P2034) — SQLite نویسندهٔ واحد دارد؛
+    83→    83→// دو تراکنش موازی که قبل از کامیتِ دیگری شروع شده باشند هنگام اولین WRITE
+    84→    84→// با BUSY/SNAPSHOT رد می‌شوند → تلاش مجدد با دید تازه لازم است.
+    85→    85→function isWriteConflict(e: unknown): boolean {
+    86→    86→  return (
+    87→    87→    typeof e === 'object' &&
+    88→    88→    e !== null &&
+    89→    89→    (e as { code?: unknown }).code === 'P2034'
+    90→    90→  )
+    91→    91→}
+    92→    92→
+    93→    93→// ---------------------------------------------------------------------------
+    94→    94→// رویدادها (لاگ ممیزی) — بدون هیچ راز و بدون دادهٔ شخصیِ غیرضروری
+    95→    95→// ---------------------------------------------------------------------------
+    96→    96→
+    97→    97→type EventKind =
+    98→    98→  | 'CREATED' | 'PAID' | 'EXPIRED' | 'CANCELLED'
+    99→    99→  | 'DUPLICATE_SUPPRESSED'
+   100→   100→  // 🧾 فاز ۵۹ — رویدادهای جریان رسیدِ دستی
+   101→   101→  | 'RECEIPT_SUBMITTED' | 'RECEIPT_RESUBMITTED' | 'RECEIPT_APPROVED' | 'RECEIPT_REJECTED'
+   102→   102→  // 🧊 رویدادهای قدیمیِ جریان USDT — فقط برای ردیف‌های تاریخی در گزارش‌ها
+   103→   103→  | 'TX_SEEN' | 'DETECTED' | 'VERIFIED' | 'UNDERPAID' | 'UNMATCHED' | 'DUPLICATE_IGNORED' | 'API_ERROR' | 'PAGING_LIMIT' | 'LATE_PAYMENT'
+   104→   104→
+   105→   105→async function logEvent(kind: EventKind, orderRef?: string, txHash?: string, detail?: Record<string, unknown>) {
+   106→   106→  try {
+   107→   107→    await database.paymentEvent.create({
+   108→   108→      data: { kind, orderRef: orderRef ?? null, txHash: txHash ?? null, detail: detail ? JSON.stringify(detail) : '' },
+   109→   109→    })
+   110→   110→  } catch (e) {
+   111→   111→    // لاگ هرگز جریان پرداخت را نمی‌شکند
+   112→   112→    console.error('[payments] failed to write event', kind, e instanceof Error ? e.message : e)
+   113→   113→  }
+   114→   114→}
+   115→   115→
+   116→   116→// ---------------------------------------------------------------------------
+   117→   117→// شناسهٔ سفارش — CT-XXXXXXXX (بدون حروف گیج‌کننده)
+   118→   118→// ---------------------------------------------------------------------------
+   119→   119→
+   120→   120→const REF_ALPHABET = 'ABCDEFGHJKMNPQRSTVWXYZ23456789'
+   121→   121→const REF_RE = /^CT-[A-HJ-KM-NP-TV-Z2-9]{8}$/ // دقیقاً همان الفبای بالا
+   122→   122→
+   123→   123→function generateOrderRef(): string {
+   124→   124→  const bytes = randomBytes(8)
+   125→   125→  let s = ''
+   126→   126→  for (let i = 0; i < 8; i++) s += REF_ALPHABET[bytes[i] % REF_ALPHABET.length]
+   127→   127→  return `CT-${s}`
+   128→   128→}
+   129→   129→
+   130→   130→export function isValidOrderRef(ref: string): boolean {
+   131→   131→  return REF_RE.test(ref)
+   132→   132→}
+   133→   133→
+   134→   134→// ---------------------------------------------------------------------------
+   135→   135→// ساخت سفارش
+   136→   136→// ---------------------------------------------------------------------------
+   137→   137→
+   138→   138→export interface CreateOrderInput {
+   139→   139→  productId: string
+   140→   140→  contactName?: string
+   141→   141→  contactEmail?: string
+   142→   142→  clientIp: string
+   143→   143→  userId?: string // 👤 کاربرِ صاحب سفارش — ساخت سفارش فقط با حساب کاربری
+   144→   144→  discountCode?: string | null // 🎟️ فقط «کد»؛ محاسبه همیشه سمت سرور
+   145→   145→}
+   146→   146→
+   147→   147→export interface PublicOrder {
+   148→   148→  ref: string
+   149→   149→  status: string
+   150→   150→  productTitle: string
+   151→   151→  productLabel: string
+   152→   152→  amountUsd: string
+   153→   153→  currency: string
+   154→   154→  network: string
+   155→   155→  address: string
+   156→   156→  expiresAt: string
+   157→   157→  createdAt: string
+   158→   158→  paidAt: string | null
+   159→   159→  txHash: string | null
+   160→   160→  explorerBase?: string
+   161→   161→  qrDataUrl?: string
+   162→   162→  // 💰 ریزِ قیمت — از اسنپ‌شات سفارش؛ سفارش‌های قدیمی null دارند
+   163→   163→  baseAmount?: string | null
+   164→   164→  tierPercent?: number | null
+   165→   165→  discountCode?: string | null
+   166→   166→  discountAmount?: string | null
+   167→   167→  // 🎟️ نوع/مقدار اصلی کد در لحظهٔ سفارش (پس از ویرایش/غیرفعال‌سازی
+   168→   168→  // کد توسط ادمین، اسنپ‌شات تاریخی سفارش دست‌نخورده می‌ماند)
+   169→   169→  discountType?: string | null
+   170→   170→  discountValue?: string | null
+   171→   171→  // 💳 فاز ۵۹ — روش پرداخت و وضعیت رسیدِ دستی
+   172→   172→  paymentMethod?: string
+   173→   173→  receiptStatus?: string | null
+   174→   174→  receiptSubmittedAt?: string | null
+   175→   175→  rejectionReason?: string | null
+   176→   176→  /** نشانی امنِ دیدن رسید — فقط برای مالک/ادمین قابل‌واکشی است */
+   177→   177→  receiptUrl?: string | null
+   178→   178→  reviewedAt?: string | null
+   179→   179→}
+   180→   180→
+   181→   181→function publicOrder(o: {
+   182→   182→  ref: string
+   183→   183→  status: string
+   184→   184→  productTitle: string
+   185→   185→  expectedMicro: number
+   186→   186→  currency: string
+   187→   187→  network: string
+   188→   188→  paymentAddress: string
+   189→   189→  expiresAt: Date
+   190→   190→  createdAt: Date
+   191→   191→  paidAt: Date | null
+   192→   192→  txHash: string | null
+   193→   193→  baseAmount?: number | null
+   194→   194→  tierPercent?: number | null
+   195→   195→  discountCode?: string | null
+   196→   196→  discountAmount?: number | null
+   197→   197→  discountType?: string | null
+   198→   198→  discountValue?: number | null
+   199→   199→  paymentMethod?: string | null
+   200→   200→  receiptId?: string | null
+   201→   201→  receiptStatus?: string | null
+   202→   202→  receiptSubmittedAt?: Date | null
+   203→   203→  rejectionReason?: string | null
+   204→   204→  reviewedAt?: Date | null
+   205→   205→}, productLabel: string): PublicOrder {
+   206→   206→  return {
+   207→   207→    ref: o.ref,
+   208→   208→    status: o.status,
+   209→   209→    productTitle: o.productTitle,
+   210→   210→    productLabel,
+   211→   211→    amountUsd: microToDisplay(o.expectedMicro),
+   212→   212→    currency: o.currency,
+   213→   213→    network: o.network,
+   214→   214→    address: o.paymentAddress,
+   215→   215→    expiresAt: o.expiresAt.toISOString(),
+   216→   216→    createdAt: o.createdAt.toISOString(),
+   217→   217→    paidAt: o.paidAt?.toISOString() ?? null,
+   218→   218→    txHash: o.txHash,
+   219→   219→    // اسنپ‌شات‌ها مستقیم نمایش داده می‌شوند (نه میکرو)
+   220→   220→    baseAmount: o.baseAmount != null ? o.baseAmount.toFixed(2) : null,
+   221→   221→    tierPercent: o.tierPercent ?? null,
+   222→   222→    discountCode: o.discountCode ?? null,
+   223→   223→    discountAmount: o.discountAmount != null ? o.discountAmount.toFixed(2) : null,
+   224→   224→    discountType: o.discountType ?? null,
+   225→   225→    discountValue: o.discountValue != null ? o.discountValue.toFixed(2) : null,
+   226→   226→    paymentMethod: o.paymentMethod ?? 'USDT_TRON',
+   227→   227→    receiptStatus: o.receiptStatus ?? null,
+   228→   228→    receiptSubmittedAt: o.receiptSubmittedAt?.toISOString() ?? null,
+   229→   229→    rejectionReason: o.rejectionReason ?? null,
+   230→   230→    receiptUrl: o.receiptId ? `/api/receipts/${o.receiptId}` : null,
+   231→   231→    reviewedAt: o.reviewedAt?.toISOString() ?? null,
+   232→   232→  }
+   233→   233→}
+   234→   234→
+   235→   235→export async function createOrder(input: CreateOrderInput): Promise<PublicOrder> {
+   236→   236→  // 💳 پرداخت دستی باید از پنل ادمین فعال و کارت تنظیم شده باشد — fail-closed
+   237→   237→  const bank = await getBankCardSettings()
+   238→   238→  if (!isBankCardReady(bank)) {
+   239→   239→    console.error('[payments] create blocked — manual bank-card payment is not configured/enabled')
+   240→   240→    throw new PaymentNotConfiguredError('Manual bank-card payment is not configured on this server')
+   241→   241→  }
+   242→   242→
+   243→   243→  // 🎓 مبلغ مرجع از جدول CourseClass — با موتور قیمت‌گذاری:
+   244→   244→  //   base = pricePerSession × sessions، تخفیف خودکار بسته (پله‌ها) و کد تخفیف
+   245→   245→  //   همه سمت سرور. مرورگر فقط productId و «کدِ» تخفیف را می‌فرستد.
+   246→   246→  const product = await findProductAsync(input.productId)
+   247→   247→  if (!product) throw new ProductNotFoundError(`Unknown product: ${input.productId}`)
+   248→   248→
+   249→   249→  // ردیف کامل کلاس از DB — برای محاسبهٔ مقتدر (fallback فایل = بدون کد)
+   250→   250→  const { findBookableClassRowByProductId } = await import('@/lib/classes/store')
+   251→   251→  const clsRow = await findBookableClassRowByProductId(input.productId)
+   252→   252→  let finalUsd = product.amountUsd
+   253→   253→  let breakdown: Awaited<ReturnType<typeof calculatePrice>>['breakdown'] | null = null
+   254→   254→  if (clsRow) {
+   255→   255→    const calc = await calculatePrice(clsRow, { code: input.discountCode, email: input.contactEmail })
+   256→   256→    breakdown = calc.breakdown
+   257→   257→    if (breakdown.final > 0) finalUsd = breakdown.final
+   258→   258→    if (calc.rejection && input.discountCode) {
+   259→   259→      console.info(`[payments] discount code "${input.discountCode}" rejected (${calc.rejection}) — order continues without code discount`)
+   260→   260→    }
+   261→   261→  }
+   262→   262→
+   263→   263→  // 💳 مبلغِ واریزِ مشتری = دقیقاً مبلغ نهایی — بدون هیچ افست/اسلات
+   264→   264→  const baseMicro = usdToMicro(finalUsd)
+   265→   265→  const contactName = (input.contactName || '').slice(0, 80)
+   266→   266→  const contactEmail = (input.contactEmail || '').slice(0, 120)
+   267→   267→
+   268→   268→  // حلقهٔ ضد-مسابقه: اگر درخواست موازی‌ای در حال نوشتن باشد، SQLite با P2034
+   269→   269→  // رد می‌کند → با دید تازه دوباره تلاش می‌کنیم (idempotency داخل تراکنش است).
+   270→   270→  let order: Awaited<ReturnType<typeof buildOrderTx>> | null = null
+   271→   271→  for (let attempt = 0; attempt < 5 && !order; attempt++) {
+   272→   272→    try {
+   273→   273→      order = await buildOrderTx(input, product, baseMicro, contactName, contactEmail, breakdown)
+   274→   274→    } catch (e) {
+   275→   275→      // 🎟️ کد بین پیش‌نمایش و این لحظه تمام/منقضی/غیرفعال شد:
+   276→   276→      // سفارش «بی‌صدا» با قیمت کامل ساخته نمی‌شود — ۴۰۹ شفاف به مشتری.
+   277→   277→      if (e instanceof DiscountExhaustedError) throw e
+   278→   278→      // 🛡️ ضد ارسال تکراری — سفارشِ بازِ همان محصول در ۲ دقیقهٔ اخیر:
+   279→   279→      // همان سفارش موجود برمی‌گردد (پاسخ idempotent؛ بدون ساخت رکورد تازه)
+   280→   280→      if (e instanceof DuplicateRecentOrderError) {
+   281→   281→        const existing = await getOrderByRef(e.existingRef)
+   282→   282→        if (existing) {
+   283→   283→          await logEvent('DUPLICATE_SUPPRESSED', existing.ref, undefined, {
+   284→   284→            windowMs: ORDER_IDEMPOTENCY_MS,
+   285→   285→            note: 'Duplicate order creation suppressed — existing open order returned',
+   286→   286→          })
+   287→   287→          return publicOrder(existing, product.label)
+   288→   288→        }
+   289→   289→        // سفارشِ موجود در همین فاصله حذف/بسته شده → ادامه به ساختِ عادی
+   290→   290→        continue
+   291→   291→      }
+   292→   292→      if (isWriteConflict(e)) continue // تلاش مجدد با دید تازه
+   293→   293→      throw e
+   294→   294→    }
+   295→   295→  }
+   296→   296→  if (!order) throw new OrderBusyError('Could not allocate an order — please try again shortly')
+   297→   297→
+   298→   298→  await logEvent('CREATED', order.ref, undefined, {
+   299→   299→    product: product.id,
+   300→   300→    amountUsd: microToDisplay(order.expectedMicro),
+   301→   301→    paymentMethod: 'MANUAL_BANK_CARD',
+   302→   302→    ...(breakdown ? { base: breakdown.base.toFixed(2), tierPercent: String(breakdown.tierPercent), code: breakdown.code ?? '-', discount: breakdown.codeDiscount.toFixed(2) } : {}),
+   303→   303→  })
+   304→   304→
+   305→   305→  // 🔔 اعلان ORDER_CREATED — فقط از رویداد واقعی backend
+   306→   306→  if (input.userId) {
+   307→   307→    notifyUser({
+   308→   308→      userId: input.userId,
+   309→   309→      category: 'order',
+   310→   310→      kind: 'ORDER_CREATED',
+   311→   311→      title: 'Order created',
+   312→   312→      body: `Your order ${order.ref} for “${product.label}” (${microToDisplay(order.expectedMicro)} USD) has been created. Please transfer the exact amount to the bank card shown on the payment page, then upload your payment receipt so we can verify it.`,
+   313→   313→      orderRef: order.ref,
+   314→   314→    })
+   315→   315→  }
+   316→   316→
+   317→   317→  return publicOrder(order, product.label)
+   318→   318→}
+   319→   319→
+   320→   320→/** یک تلاش کامل ساخت سفارش داخل یک تراکنش دیتابیس — جریانِ پرداخت دستی */
+   321→   321→async function buildOrderTx(
+   322→   322→  input: CreateOrderInput,
+   323→   323→  product: PaymentProduct,
+   324→   324→  baseMicro: number,
+   325→   325→  contactName: string,
+   326→   326→  contactEmail: string,
+   327→   327→  breakdown: Awaited<ReturnType<typeof calculatePrice>>['breakdown'] | null
+   328→   328→) {
+   329→   329→  const { userId } = input
+   330→   330→  return database.$transaction(async (tx) => {
+   331→   331→    // 🛡️ ضد ارسال تکراری (idempotency) — داخل همان تراکنش: اگر همین کاربر همان
+   332→   332→    // محصول را لحظاتی پیش سفارش داده باشد و هنوز باز باشد، به‌جای رکورد تازه همان
+   333→   333→    // سفارش برمی‌گرداند (دابل‌کلیک هرگز دو سفارش نمی‌سازد).
+   334→   334→    if (userId) {
+   335→   335→      const dup = await tx.usdtOrder.findFirst({
+   336→   336→        where: {
+   337→   337→          userId,
+   338→   338→          productId: product.id,
+   339→   339→          status: { in: [...ACTIVE_STATUSES] },
+   340→   340→          createdAt: { gte: new Date(Date.now() - ORDER_IDEMPOTENCY_MS) },
+   341→   341→        },
+   342→   342→        orderBy: { createdAt: 'desc' },
+   343→   343→        select: { ref: true },
+   344→   344→      })
+   345→   345→      if (dup) throw new DuplicateRecentOrderError(dup.ref)
+   346→   346→    }
+   347→   347→
+   348→   348→    // سقف سفارش باز برای هر IP
+   349→   349→    const openCount = await tx.usdtOrder.count({
+   350→   350→      where: { clientIp: input.clientIp, status: { in: [...ACTIVE_STATUSES] } },
+   351→   351→    })
+   352→   352→    if (openCount >= MAX_OPEN_ORDERS_PER_IP) throw new OrderLimitError('Too many open orders')
+   353→   353→
+   354→   354→    // 🛡️ سقف مستقل برای هر کاربر (ضد چرخش IP برای دورزدن سقف IP)
+   355→   355→    if (userId) {
+   356→   356→      const openUserCount = await tx.usdtOrder.count({
+   357→   357→        where: { userId, status: { in: [...ACTIVE_STATUSES] } },
+   358→   358→      })
+   359→   359→      if (openUserCount >= MAX_OPEN_ORDERS_PER_USER) throw new OrderLimitError('Too many open orders')
+   360→   360→    }
+   361→   361→
+   362→   362→    const ref = generateOrderRef()
+   363→   363→    const expiresAt = new Date(Date.now() + MANUAL_ORDER_TTL_MS)
+   364→   364→    const created = await tx.usdtOrder.create({
+   365→   365→      data: {
+   366→   366→        ref,
+   367→   367→        userId: userId ?? null,
+   368→   368→        productId: product.id,
+   369→   369→        productTitle: product.label,
+   370→   370→        contactName,
+   371→   371→        contactEmail,
+   372→   372→        expectedMicro: baseMicro, // 💳 واریز دقیقِ مبلغ نهایی — بدون افست
+   373→   373→        currency: 'USD', // 💳 پرداخت بانکی — نمایش دلار
+   374→   374→        network: 'BANK', // نشانهٔ «خارج از بلاکچین» — شبکهٔ قدیمی سفارش‌های USDT حفظ شده
+   375→   375→        paymentMode: 'manual',
+   376→   376→        paymentAddress: '', // 🧾 در پرداخت بانکی آدرسِ زنجیره‌ای وجود ندارد
+   377→   377→        addressIndex: null,
+   378→   378→        clientIp: input.clientIp,
+   379→   379→        paymentMethod: 'MANUAL_BANK_CARD',
+   380→   380→        status: 'PENDING',
+   381→   381→        expiresAt,
+   382→   382→        // 💰 اسنپ‌شات قیمت‌گذاری — سفارش تاریخی هرگز از پیکربندی آینده پیروی نمی‌کند
+   383→   383→        // 🎟️ نوع/مقدار کد هم اسنپ‌شات می‌شود (دقت تاریخی بعد از ویرایش ادمین)
+   384→   384→        ...(breakdown
+   385→   385→          ? {
+   386→   386→              pricePerSession: breakdown.pricePerSession,
+   387→   387→              packageSessions: breakdown.sessions,
+   388→   388→              baseAmount: breakdown.base,
+   389→   389→              tierPercent: breakdown.tierPercent,
+   390→   390→              discountCode: breakdown.code,
+   391→   391→              discountAmount: breakdown.codeDiscount,
+   392→   392→              discountType: breakdown.codeType,
+   393→   393→              discountValue: breakdown.codeValue,
+   394→   394→            }
+   395→   395→          : {}),
+   396→   396→      },
+   397→   397→    })
+   398→   398→
+   399→   399→    // 🎟️ ثبت استفادهٔ کد داخل «همان تراکنش» سفارش:
+   400→   400→    //  • شمارش maxUses/perCustomer + درج Redemption اتمی است — سفارش بدون ثبت
+   401→   401→    //    استفاده هرگز commit نمی‌شود و برعکس.
+   402→   402→    //  • قواعد زمان‌محور/وضعیت‌محور (active/startsAt/endsAt) دوباره با «زمان سرور»
+   403→   403→    //    چک می‌شوند — مرورگر و پیش‌نمایش قبلی هیچ اعتباری ندارند.
+   404→   404→    if (breakdown?.discountId && breakdown.codeDiscount > 0 && breakdown.code) {
+   405→   405→      const dRow = await tx.discount.findUnique({ where: { id: breakdown.discountId } })
+   406→   406→      const now = new Date() // ⏰ زمان سرور — مرورگر هرگز اعتبار کد را تعیین نمی‌کند
+   407→   407→      if (!dRow || !dRow.active) throw new DiscountExhaustedError(breakdown.code)
+   408→   408→      if (dRow.startsAt && dRow.startsAt > now) throw new DiscountExhaustedError(breakdown.code)
+   409→   409→      if (dRow.endsAt && dRow.endsAt < now) throw new DiscountExhaustedError(breakdown.code)
+   410→   410→      const usedTotal = await tx.discountRedemption.count({ where: { discountId: dRow.id } })
+   411→   411→      if (dRow.maxUses !== null && usedTotal >= dRow.maxUses) throw new DiscountExhaustedError(breakdown.code)
+   412→   412→      const redemptionEmail = contactEmail.toLowerCase()
+   413→   413→      if (redemptionEmail) {
+   414→   414→        const usedBy = await tx.discountRedemption.count({
+   415→   415→          where: { discountId: dRow.id, userEmail: redemptionEmail },
+   416→   416→        })
+   417→   417→        if (usedBy >= Math.max(1, dRow.perCustomer)) throw new DiscountExhaustedError(breakdown.code)
+   418→   418→      }
+   419→   419→      await tx.discountRedemption.create({
+   420→   420→        data: {
+   421→   421→          discountId: dRow.id,
+   422→   422→          orderRef: ref,
+   423→   423→          userEmail: redemptionEmail,
+   424→   424→          amount: breakdown.codeDiscount,
+   425→   425→        },
+   426→   426→      })
+   427→   427→    }
+   428→   428→
+   429→   429→    return created
+   430→   430→  })
+   431→   431→}
+   432→   432→
+   433→   433→// ---------------------------------------------------------------------------
+   434→   434→// خواندن وضعیت (عمومی — با گارد مالکیت در سطح route)
+   435→   435→// ---------------------------------------------------------------------------
+   436→   436→
+   437→   437→export async function getOrderByRef(ref: string) {
+   438→   438→  if (!REF_RE.test(ref)) return null
+   439→   439→  return database.usdtOrder.findUnique({ where: { ref } })
+   440→   440→}
+   441→   441→
+   442→   442→export async function buildPublicStatus(ref: string): Promise<PublicOrder | null> {
+   443→   443→  const o = await getOrderByRef(ref)
+   444→   444→  if (!o) return null
+   445→   445→  // 📊 وضعیت نمایشی مشتقِ سمت سرور است — PENDINGِ منقضی = EXPIRED حتی اگر
+   446→   446→  // سوئیپر هنوز رکورد را به‌روز نکرده باشد؛ مشتری هرگز صفحهٔ قابل‌پرداختِ
+   447→   447→  // سفارشِ منقضی نمی‌بیند. RECEIPT_SUBMITTED هرگز منقضی نمایش داده نمی‌شود.
+   448→   448→  const derived = deriveOrderStatus(o)
+   449→   449→  // محصولِ کلاس ممکن است بعداً حذف/غیرفعال شده باشد — اسنپ‌شات سفارش (productTitle)
+   450→   450→  // همیشه معتبر است و هرگز به منبع فعلی وابسته نیست (دقت تاریخی سفارش‌ها)
+   451→   451→  const product = await findProductAsync(o.productId)
+   452→   452→  return publicOrder({ ...o, status: derived }, product?.label ?? o.productTitle)
+   453→   453→}
+   454→   454→
+   455→   455→// ---------------------------------------------------------------------------
+   456→   456→// 🧾 رسید پرداخت دستی — ارسال توسط مالکِ سفارش (فاز ۵۹)
+   457→   457→// ---------------------------------------------------------------------------
+   458→   458→
+   459→   459→export type SubmitReceiptResult =
+   460→   460→  | { ok: true; resubmitted: boolean }
+   461→   461→  | { ok: false; reason: 'NOT_FOUND' | 'NOT_OWNER' | 'INVALID_STATE' | 'ALREADY_SUBMITTED' | 'CONFLICT' }
+   462→   462→
+   463→   463→export async function submitReceipt(input: {
+   464→   464→  ref: string
+   465→   465→  viewerUserId: string
+   466→   466→  receiptId: string
+   467→   467→  mime: ReceiptMime
+   468→   468→  size: number
+   469→   469→  fileName: string
+   470→   470→  fileData: Buffer
+   471→   471→}): Promise<SubmitReceiptResult> {
+   472→   472→  const order = await getOrderByRef(input.ref)
+   473→   473→  if (!order) return { ok: false, reason: 'NOT_FOUND' }
+   474→   474→  // 🔒 فقط مالکِ سشن — پاسخِ «پیدا نشد» برای سفارشِ دیگران (بدون نشت وجودش)
+   475→   475→  if (!order.userId || order.userId !== input.viewerUserId) return { ok: false, reason: 'NOT_FOUND' }
+   476→   476→
+   477→   477→  const derived = deriveOrderStatus(order)
+   478→   478→  const resubmitted = derived === 'REJECTED'
+   479→   479→  if (derived === 'RECEIPT_SUBMITTED') {
+   480→   480→    // 🛡️ ضد ارسال تکراری — رسیدِ در انتظار بررسی؛ دوباره پذیرفته نمی‌شود
+   481→   481→    return { ok: false, reason: 'ALREADY_SUBMITTED' }
+   482→   482→  }
+   483→   483→  if (derived !== 'PENDING' && derived !== 'REJECTED') {
+   484→   484→    return { ok: false, reason: 'INVALID_STATE' }
+   485→   485→  }
+   486→   486→
+   487→   487→  // فایل اول ذخیره می‌شود (شناسهٔ یکتا — بدون تداخل)؛ اگر گارد وضعیت شکست بخورد
+   488→   488→  // فایل یتیم حذف می‌شود. گارد، هم‌زمانیِ دو ارسال موازی را می‌گیرد.
+   489→   489→  await saveReceiptFile(input.receiptId, input.mime, input.fileData)
+   490→   490→  const res = await database.usdtOrder
+   491→   491→    .updateMany({
+   492→   492→      where: {
+   493→   493→        ref: input.ref,
+   494→   494→        status: { in: ['PENDING', 'REJECTED'] },
+   495→   495→        OR: [{ status: 'REJECTED' }, { expiresAt: { gt: new Date() } }],
+   496→   496→      },
+   497→   497→      data: {
+   498→   498→        status: 'RECEIPT_SUBMITTED',
+   499→   499→        receiptStatus: 'PENDING_REVIEW',
+   500→   500→        receiptId: input.receiptId,
+   501→   501→        receiptMime: input.mime,
+   502→   502→        receiptSize: input.size,
+   503→   503→        receiptFileName: input.fileName,
+   504→   504→        receiptSubmittedAt: new Date(),
+   505→   505→        rejectionReason: null, // ارسال دوباره = دلیل قبلی پاک می‌شود
+   506→   506→        reviewedAt: null,
+   507→   507→        reviewedBy: null,
+   508→   508→        ...(resubmitted ? { receiptResubmits: { increment: 1 } } : {}),
+   509→   509→      },
+   510→   510→    })
+   511→   511→    .then((r) => r.count)
+   512→   512→    .catch(() => 0)
+   513→   513→
+   514→   514→  if (res !== 1) {
+   515→   515→    await deleteReceiptFile(input.receiptId)
+   516→   516→    return { ok: false, reason: 'CONFLICT' }
+   517→   517→  }
+   518→   518→
+   519→   519→  // حذف فایل رسید قبلی (ارسال دوباره پس از رد) — بعد از موفقیتِ به‌روزرسانی
+   520→   520→  if (order.receiptId && order.receiptId !== input.receiptId) {
+   521→   521→    await deleteReceiptFile(order.receiptId)
+   522→   522→  }
+   523→   523→
+   524→   524→  await logEvent(resubmitted ? 'RECEIPT_RESUBMITTED' : 'RECEIPT_SUBMITTED', input.ref, undefined, {
+   525→   525→    size: input.size,
+   526→   526→    mime: input.mime,
+   527→   527→    resubmits: (order.receiptResubmits ?? 0) + (resubmitted ? 1 : 0),
+   528→   528→  })
+   529→   529→
+   530→   530→  // 🔔 اعلان مشتری: رسید دریافت شد و در انتظار بررسی است (وضعیت هرگز «پرداخت‌شده» نیست)
+   531→   531→  notifyOrderEvent(input.ref, {
+   532→   532→    kind: 'RECEIPT_RECEIVED',
+   533→   533→    category: 'payment',
+   534→   534→    title: 'Receipt submitted',
+   535→   535→    body: `Your payment receipt for order ${input.ref} has been submitted and is now waiting for verification. We'll notify you as soon as our team reviews it.`,
+   536→   536→  })
+   537→   537→
+   538→   538→  return { ok: true, resubmitted }
+   539→   539→}
+   540→   540→
+   541→   541→// ---------------------------------------------------------------------------
+   542→   542→// ✅ تأیید/ردّ ادمین — تنها مسیرِ ساختنِ PAID در جریانِ دستی (فاز ۵۹)
+   543→   543→// ---------------------------------------------------------------------------
+   544→   544→
+   545→   545→export type ReviewResult = 'ok' | 'not-reviewable'
+   546→   546→
+   547→   547→/**
+   548→   548→ * تأیید پرداخت — فقط از RECEIPT_SUBMITTED و فقط با گارد وضعیت‌محور؛
+   549→   549→ * تأیید دوم همیشه شکست می‌خورد (ضد تأیید تصادفیِ دوباره).
+   550→   550→ */
+   551→   551→export async function approveManualPayment(ref: string, actor: string): Promise<ReviewResult> {
+   552→   552→  const res = await database.usdtOrder
+   553→   553→    .updateMany({
+   554→   554→      where: { ref, status: 'RECEIPT_SUBMITTED' },
+   555→   555→      data: {
+   556→   556→        status: 'PAID',
+   557→   557→        paidAt: new Date(),
+   558→   558→        receiptStatus: 'APPROVED',
+   559→   559→        reviewedAt: new Date(),
+   560→   560→        reviewedBy: actor.slice(0, 60),
+   561→   561→        rejectionReason: null,
+   562→   562→      },
+   563→   563→    })
+   564→   564→    .then((r) => r.count)
+   565→   565→    .catch(() => 0)
+   566→   566→  if (res !== 1) return 'not-reviewable'
+   567→   567→
+   568→   568→  await logEvent('RECEIPT_APPROVED', ref, undefined, { by: actor })
+   569→   569→  // 🔔 اعلان مشتری — تأیید نهایی توسط انسان
+   570→   570→  notifyOrderEvent(ref, {
+   571→   571→    kind: 'PAYMENT_CONFIRMED',
+   572→   572→    category: 'payment',
+   573→   573→    title: 'Payment approved 🎉',
+   574→   574→    body: `Your payment for order ${ref} has been approved. Our team will contact you to schedule your class sessions — track your enrollment status in your account.`,
+   575→   575→  })
+   576→   576→  return 'ok'
+   577→   577→}
+   578→   578→
+   579→   579→/** ردّ رسید — دلیلِ رد اجباری است و به مشتری نشان داده می‌شود */
+   580→   580→export async function rejectManualPayment(ref: string, actor: string, reason: string): Promise<ReviewResult> {
+   581→   581→  const cleanReason = reason.trim().slice(0, 500)
+   582→   582→  if (!cleanReason) return 'not-reviewable'
+   583→   583→  const res = await database.usdtOrder
+   584→   584→    .updateMany({
+   585→   585→      where: { ref, status: 'RECEIPT_SUBMITTED' },
+   586→   586→      data: {
+   587→   587→        status: 'REJECTED',
+   588→   588→        receiptStatus: 'REJECTED',
+   589→   589→        reviewedAt: new Date(),
+   590→   590→        reviewedBy: actor.slice(0, 60),
+   591→   591→        rejectionReason: cleanReason,
+   592→   592→      },
+   593→   593→    })
+   594→   594→    .then((r) => r.count)
+   595→   595→    .catch(() => 0)
+   596→   596→  if (res !== 1) return 'not-reviewable'
+   597→   597→
+   598→   598→  await logEvent('RECEIPT_REJECTED', ref, undefined, { by: actor, reason: cleanReason.slice(0, 300) })
+   599→   599→  // 🔔 اعلان مشتری — ردّ با دلیل شفاف + امکان ارسال دوبارهٔ رسید روی همان سفارش
+   600→   600→  notifyOrderEvent(ref, {
+   601→   601→    kind: 'PAYMENT_REJECTED',
+   602→   602→    category: 'payment',
+   603→   603→    title: 'Payment rejected',
+   604→   604→    body: `Your payment for order ${ref} was rejected. Reason: ${cleanReason} — you can upload a new receipt for the same order from the payment page.`,
+   605→   605→  })
+   606→   606→  return 'ok'
+   607→   607→}
+   608→   608→
+   609→   609→// ---------------------------------------------------------------------------
+   610→   610→// انقضای سفارش‌های قدیمیِ پرداخت‌نشده — فقط PENDING؛ RECEIPT_SUBMITTED هرگز
+   611→   611→// ---------------------------------------------------------------------------
+   612→   612→
+   613→   613→/**
+   614→   614→ * فیلتر شبکه — سفارش‌های «شبکهٔ دیگر» هرگز لمس نمی‌شوند. مقدار قدیمی «TRON»
+   615→   615→ * هم‌ارز mainnet است؛ «BANK» فقط سفارش‌های پرداخت دستی را می‌گیرد.
+   616→   616→ */
+   617→   617→function networkFilter(network: string): { in: string[] } {
+   618→   618→  if (network === 'BANK') return { in: ['BANK'] }
+   619→   619→  return { in: network === 'mainnet' ? ['mainnet', 'TRON'] : [network] }
+   620→   620→}
+   621→   621→
+   622→   622→export async function expireStaleOrders(network: string = 'BANK'): Promise<number> {
+   623→   623→  const stale = await database.usdtOrder.findMany({
+   624→   624→    where: { status: 'PENDING', expiresAt: { lt: new Date() }, network: networkFilter(network) },
+   625→   625→    select: { ref: true, userId: true },
+   626→   626→  })
+   627→   627→  let n = 0
+   628→   628→  for (const o of stale) {
+   629→   629→    // گارد وضعیت‌محور: فقط PENDING منقضی می‌شود؛ PAID/RECEIPT_SUBMITTED هم‌زمان دست‌نخورده می‌مانند
+   630→   630→    const res = await database.usdtOrder
+   631→   631→      .updateMany({ where: { ref: o.ref, status: 'PENDING' }, data: { status: 'EXPIRED' } })
+   632→   632→      .then((r) => r.count)
+   633→   633→      .catch(() => 0)
+   634→   634→    if (res === 1) {
+   635→   635→      n++
+   636→   636→      await logEvent('EXPIRED', o.ref)
+   637→   637→      // 🎟️ آزادسازی سهمیهٔ کد تخفیف: سفارشِ منقضی هرگز پرداخت نشده،
+   638→   638→      // پس استفاده‌اش نباید در maxUses/perCustomer حساب شود.
+   639→   639→      await database.discountRedemption.deleteMany({ where: { orderRef: o.ref } }).catch(() => 0)
+   640→   640→      // 🔔 اعلان ORDER_EXPIRED — انقضای سمت سرور است، نه تصمیم مرورگر
+   641→   641→      if (o.userId) {
+   642→   642→        notifyUser({
+   643→   643→          userId: o.userId,
+   644→   644→          category: 'order',
+   645→   645→          kind: 'ORDER_EXPIRED',
+   646→   646→          title: 'Order expired',
+   647→   647→          body: `Your order ${o.ref} expired because the payment deadline passed. You can safely create a new order anytime — no payment was deducted.`,
+   648→   648→          orderRef: o.ref,
+   649→   649→        })
+   650→   650→      }
+   651→   651→    }
+   652→   652→  }
+   653→   653→  return n
+   654→   654→}
+   655→   655→
+   656→   656→// ---------------------------------------------------------------------------
+   657→   657→// عملیات ادمین
+   658→   658→// ---------------------------------------------------------------------------
+   659→   659→
+   660→   660→export async function adminCancelOrder(ref: string): Promise<boolean> {
+   661→   661→  const res = await database.usdtOrder
+   662→   662→    .updateMany({ where: { ref, status: 'PENDING' }, data: { status: 'CANCELLED' } })
+   663→   663→    .then((r) => r.count)
+   664→   664→    .catch(() => 0)
+   665→   665→  if (res === 1) {
+   666→   666→    await logEvent('CANCELLED', ref, undefined, { by: 'admin' })
+   667→   667→    // لغو فقط از PENDING ممکن است (هرگز پرداخت‌نشده) → سهمیهٔ کد آزاد شود
+   668→   668→    await database.discountRedemption.deleteMany({ where: { orderRef: ref } }).catch(() => 0)
+   669→   669→    // 🔔 اعلان ORDER_CANCELLED — لغو توسط ادمین
+   670→   670→    void notifyOrderEvent(ref, {
+   671→   671→      kind: 'ORDER_CANCELLED',
+   672→   672→      category: 'order',
+   673→   673→      title: 'Order cancelled',
+   674→   674→      body: `Your order ${ref} was cancelled by our team. If you didn't expect this or need help re-ordering, please contact support.`,
+   675→   675→    })
+   676→   676→  }
+   677→   677→  return res === 1
+   678→   678→}
+   679→   679→
+   680→   680→/** شمارنده‌های تب Payments پنل ادمین — همه از دیتابیس، نه متن تزئینی */
+   681→   681→export async function getAdminPaymentCounts(): Promise<{
+   682→   682→  pendingReview: number
+   683→   683→  approved: number
+   684→   684→  rejected: number
+   685→   685→  unpaid: number
+   686→   686→  cancelled: number
+   687→   687→}> {
+   688→   688→  const now = new Date()
+   689→   689→  const [pendingReview, approved, rejected, unpaidOpen, unpaidExpired, cancelled] = await Promise.all([
+   690→   690→    database.usdtOrder.count({ where: { status: 'RECEIPT_SUBMITTED' } }),
+   691→   691→    database.usdtOrder.count({ where: { status: 'PAID' } }),
+   692→   692→    database.usdtOrder.count({ where: { status: 'REJECTED' } }),
+   693→   693→    database.usdtOrder.count({ where: { status: 'PENDING', expiresAt: { gt: now } } }),
+   694→   694→    database.usdtOrder.count({ where: { status: 'PENDING', expiresAt: { lte: now } } }),
+   695→   695→    database.usdtOrder.count({ where: { status: 'CANCELLED' } }),
+   696→   696→  ])
+   697→   697→  return {
+   698→   698→    pendingReview,
+   699→   699→    approved,
+   700→   700→    rejected,
+   701→   701→    unpaid: unpaidOpen + unpaidExpired,
+   702→   702→    cancelled,
+   703→   703→  }
+   704→   704→}
+   705→   705→
