@@ -73,3 +73,25 @@ Stage Summary:
 - Crypto/TRON/USDT/wallet: wallet endpoint stubbed to 404; dormant crypto modules (tron-address/hd-address/config wallet-half) remain isolated/unreachable, build-safe. No crypto UI active.
 - Existing local SQLite DB untouched; migration script ready to copy data → Neon.
 - Deployable on Vercel with: Vercel env DATABASE_URL (Neon pooled), Build Command `bun run db:migrate:deploy && bun run build`.
+
+---
+Task ID: SEO-SITEMAP
+Agent: Z.ai Code (main) — sitemap/robots/SEO audit
+Task: Fix invalid /sitemap.xml reported by Google Search Console for www.chinesetoon.com
+
+Work Log:
+- Inspected /home/z/ct-audit/ SEO setup: src/app/sitemap.ts, public/robots.txt, src/app/layout.tsx metadata, src/app/page.tsx (hash-based SPA), next.config.ts redirects.
+- ROOT CAUSE: siteContent.contact.siteUrl = "https://chinesetoon.com" (NON-www). The sitemap emitted <loc>https://chinesetoon.com/</loc> and robots.txt pointed to https://chinesetoon.com/sitemap.xml — but Google Search Console checks the canonical www.chinesetoon.com. This www/non-www mismatch made Google flag the sitemap as invalid (URLs not allowed / cross-domain).
+- Confirmed SPA architecture: all public views (classes/learn/about/blog/reviews/support/register) are hash routes (#/classes) rendered client-side from the single HTTP route `/`. next.config redirects /classes→/#/classes are 307 (must NOT be in sitemap). No dynamic App Router pages exist. So only `/` is a valid indexable canonical URL.
+- Fixes applied:
+  • src/content/site-content.ts: siteUrl "https://chinesetoon.com" → "https://www.chinesetoon.com" (canonical www). Auto-fixed: sitemap URLs, metadataBase, JSON-LD @id, OG url.
+  • Deleted public/robots.txt; created src/app/robots.ts (native Next.js Metadata API) sourcing canonical domain from same siteContent — eliminates www/non-www drift between robots and sitemap. Rules: User-agent:* Allow:/ + Sitemap: https://www.chinesetoon.com/sitemap.xml + Host.
+  • Rewrote src/app/sitemap.ts with explicit comment explaining why only `/` is listed (hash-SPA architecture). Uses same canonical domain source.
+- VERIFICATION: bun run lint ✓ (0 errors), bun run build ✓ (compiled 14.1s; /robots.txt + /sitemap.xml both ○ static prerendered). Live fetch on dev server: GET /robots.txt → HTTP 200 text/plain (correct content); GET /sitemap.xml → HTTP 200 application/xml (valid urlset, namespace http://www.sitemaps.org/schemas/sitemap/0.9, loc=https://www.chinesetoon.com/). Python xml.dom.minidom + ElementTree parse: ✓ well-formed, ✓ schema-valid, ✓ 1 url.
+- noindex/nofollow audit: NONE found on any public page. No per-page robots overrides. metadataBase now correctly www.
+
+Stage Summary:
+- /sitemap.xml and /robots.txt now serve valid, Google-compatible content on the canonical www.chinesetoon.com domain.
+- Single source of truth (siteContent.contact.siteUrl) feeds sitemap + robots + metadataBase + JSON-LD — no future www/non-www drift possible.
+- Compatible with Next.js 16.1.3 App Router native Metadata API; works on Vercel (both routes are static ○ prerendered at build time).
+- Long-term SEO recommendation (out of scope per user constraint): convert hash routes to real App Router routes (/classes, /learn, /blog/[slug]) so each public view becomes independently indexable.
