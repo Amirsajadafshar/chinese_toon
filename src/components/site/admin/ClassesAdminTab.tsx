@@ -1573,7 +1573,9 @@ export function ClassesAdminTab({ token, onToast }: { token: string; onToast?: (
                 <span>{a.previewTitle}</span>
                 <button
                   onClick={() => {
-                    window.location.hash = `/classes/${previewItem.slug}`
+                    // 🧭 فاز SEO — پیش‌نمایش صفحهٔ عمومی در تب جدید باز می‌شود تا
+                    // وضعیت پنل ادمین از دست نرود
+                    window.open(`/classes/${previewItem.slug}`, '_blank', 'noopener')
                     setPreviewRow(null)
                   }}
                   className="inline-flex items-center gap-1 text-brown hover:text-sage-dark normal-case tracking-normal cursor-pointer"

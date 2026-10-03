@@ -87,14 +87,8 @@ export function HomeReviewsCarousel({ onNavigate }: { onNavigate: (page: 'review
         })
     }
     load()
-    const onHash = () => {
-      const h = window.location.hash
-      if (h.startsWith('#/home') || h === '' || h === '#' || h === '#/') load()
-    }
-    window.addEventListener('hashchange', onHash)
     return () => {
       cancelled = true
-      window.removeEventListener('hashchange', onHash)
     }
   }, [])
 

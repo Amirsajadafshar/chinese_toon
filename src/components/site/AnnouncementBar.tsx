@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useSyncExternalStore } from 'react'
+import Link from 'next/link'
 import { X } from 'lucide-react'
 import { siteContent, PageKey } from '@/content/site-content'
 
@@ -63,7 +64,7 @@ function getServerSnapshot(): boolean {
   return false // روی سرور نوار باز فرض می‌شود
 }
 
-export function AnnouncementBar({ onNavigate }: { onNavigate: (page: PageKey) => void }) {
+export function AnnouncementBar() {
   const [a, setA] = useState<AnnouncementData>(staticAnnouncement)
   const dismissed = useSyncExternalStore(subscribe, makeGetSnapshot(a.id), getServerSnapshot)
 
@@ -93,10 +94,8 @@ export function AnnouncementBar({ onNavigate }: { onNavigate: (page: PageKey) =>
         .catch(() => {})
     }
     load()
-    window.addEventListener('hashchange', load)
     return () => {
       cancelled = true
-      window.removeEventListener('hashchange', load)
     }
   }, [])
 
@@ -111,12 +110,12 @@ export function AnnouncementBar({ onNavigate }: { onNavigate: (page: PageKey) =>
         <p className="text-xs md:text-[13px] font-medium text-brown-dark leading-snug min-w-0 line-clamp-2 md:line-clamp-none">
           {a.text}
         </p>
-        <button
-          onClick={() => onNavigate(a.ctaPage as PageKey)}
+        <Link
+          href={a.ctaPage === 'home' ? '/' : `/${a.ctaPage}`}
           className="flex-shrink-0 bg-white/80 hover:bg-white text-brown-dark text-[11px] md:text-xs font-bold px-3 py-1 rounded-full transition-all hover:-translate-y-px shadow-sm cursor-pointer whitespace-nowrap"
         >
           {a.ctaLabel}
-        </button>
+        </Link>
         <button
           onClick={() => dismiss(a.id)}
           aria-label="Dismiss announcement"

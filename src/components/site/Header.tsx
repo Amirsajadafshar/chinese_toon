@@ -1,18 +1,19 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { Menu, Moon, Sun, UserRound, X } from 'lucide-react'
 import { siteContent, PageKey } from '@/content/site-content'
 import { useUser } from '@/lib/user-store'
+import { appNavigate } from '@/lib/nav'
 import { AnnouncementBar } from './AnnouncementBar'
 import { ToonMark } from './ToonBranch'
 
 interface HeaderProps {
   activePage: PageKey
-  onNavigate: (page: PageKey) => void
 }
 
-export function Header({ activePage, onNavigate }: HeaderProps) {
+export function Header({ activePage }: HeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [scrolled, setScrolled] = useState(false)
   // 👤 استور کاربر — اولین استفاده، واکشی یک‌باره از /api/auth/me را راه می‌اندازد
@@ -42,16 +43,14 @@ export function Header({ activePage, onNavigate }: HeaderProps) {
     }
   }, [menuOpen])
 
-  const go = (page: PageKey) => {
-    onNavigate(page)
+  // 👤 رفتن به حساب کاربری — از دسکتاپ و منوی موبایل
+  const goAccount = () => {
+    appNavigate('/account')
     setMenuOpen(false)
   }
 
-  // 👤 رفتن به حساب کاربری — از دسکتاپ و منوی موبایل
-  const goAccount = () => {
-    window.location.hash = '/account'
-    setMenuOpen(false)
-  }
+  // 🧭 مسیر واقعی هر نمای منو — لینک‌های <a> برای خزندگی گوگل
+  const hrefFor = (page: PageKey) => (page === 'home' ? '/' : `/${page}`)
 
   return (
     <>
@@ -62,14 +61,15 @@ export function Header({ activePage, onNavigate }: HeaderProps) {
         }`}
       >
         {/* 📣 نوار اعلان — بالای نوار منو، از فایل محتوا */}
-        <AnnouncementBar onNavigate={go} />
+        <AnnouncementBar />
 
         <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
           {/* لوگو — نشان شاخهٔ درخت تُون + نام برند */}
-          <button
-            onClick={() => go('home')}
+          <Link
+            href="/"
             className="flex items-center gap-2.5 group cursor-pointer"
             aria-label="Chinese Toon — Home"
+            onClick={() => setMenuOpen(false)}
           >
             <span className="w-10 h-10 bg-white rounded-xl border border-sage-light/50 shadow-sm flex items-center justify-center group-hover:scale-105 group-hover:rotate-3 transition-transform">
               <ToonMark className="w-7 h-7" />
@@ -82,20 +82,20 @@ export function Header({ activePage, onNavigate }: HeaderProps) {
                 香椿 · MANDARIN
               </span>
             </span>
-          </button>
+          </Link>
 
           {/* منوی دسکتاپ */}
           <nav className="hidden md:flex items-center gap-5 lg:gap-8" aria-label="Main navigation">
             {siteContent.navigation.map((item) => (
-              <button
+              <Link
                 key={item.key}
-                onClick={() => go(item.key as PageKey)}
+                href={hrefFor(item.key as PageKey)}
                 className={`nav-link text-sm font-medium text-brown-light hover:text-brown-dark transition-colors cursor-pointer ${
                   activePage === item.key ? 'active-link' : ''
                 }`}
               >
                 {item.label}
-              </button>
+              </Link>
             ))}
           </nav>
 
@@ -167,13 +167,13 @@ export function Header({ activePage, onNavigate }: HeaderProps) {
       >
         <div className="p-6 h-full flex flex-col">
           <div className="flex justify-between items-center mb-10">
-            <span className="flex items-center gap-2">
+            <Link href="/" className="flex items-center gap-2" onClick={() => setMenuOpen(false)}>
               <ToonMark className="w-8 h-8" />
               <span className="text-left leading-none">
                 <span className="block text-lg font-bold tracking-wide text-leaf-dark">CHINESE TOON</span>
                 <span className="block text-[10px] font-semibold text-brown-light tracking-[0.3em] mt-0.5">香椿 · MANDARIN</span>
               </span>
-            </span>
+            </Link>
             <button
               onClick={() => setMenuOpen(false)}
               className="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-sage-light/20 transition-colors cursor-pointer"
@@ -184,15 +184,16 @@ export function Header({ activePage, onNavigate }: HeaderProps) {
           </div>
           <nav className="flex flex-col gap-1 mb-8" aria-label="Mobile navigation">
             {siteContent.navigation.map((item) => (
-              <button
+              <Link
                 key={item.key}
-                onClick={() => go(item.key as PageKey)}
+                href={hrefFor(item.key as PageKey)}
+                onClick={() => setMenuOpen(false)}
                 className={`text-lg font-semibold text-left py-3 px-4 rounded-xl hover:bg-sage-light/10 transition-colors cursor-pointer ${
                   activePage === item.key ? 'text-sage-dark' : 'text-brown'
                 }`}
               >
                 {item.label}
-              </button>
+              </Link>
             ))}
             {/* 👤 حساب کاربری — ورود برای مهمان، پروفایل برای کاربر واردشده */}
             <button

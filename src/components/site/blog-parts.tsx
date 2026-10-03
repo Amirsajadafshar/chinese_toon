@@ -1,9 +1,12 @@
 'use client'
 
-import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import { CalendarDays, ArrowRight, Clock3, Eye } from 'lucide-react'
 import { siteContent } from '@/content/site-content'
 import { resilientJsonFetch } from '@/lib/client-fetch'
+import { appNavigate } from '@/lib/nav'
 
 // ---------------------------------------------------------------------
 //  بخش‌های مشترک وبلاگ: هوک دریافت مقاله‌ها + کاور + کارت + رندر متن
@@ -25,27 +28,9 @@ export interface BlogPost {
   updatedAt: string
 }
 
-function subscribeToHash(callback: () => void) {
-  window.addEventListener('hashchange', callback)
-  return () => window.removeEventListener('hashchange', callback)
-}
-
-// خواندن slug از آدرس (#/blog/my-post → my-post) — null یعنی لیست وبلاگ
-export function usePostSlug(): string | null {
-  return useSyncExternalStore(
-    subscribeToHash,
-    () => {
-      const raw = window.location.hash.replace(/^#\/?/, '').split('?')[0]
-      if (raw.startsWith('blog/')) return decodeURIComponent(raw.slice(5)) || null
-      return null
-    },
-    () => null
-  )
-}
-
-// ناوبری به صفحهٔ مقاله
+// ناوبری به صفحهٔ مقاله — روت واقعی (/blog/slug) به‌جای hash قدیمی
 export function goToPost(slug: string) {
-  window.location.hash = `/blog/${encodeURIComponent(slug)}`
+  appNavigate(`/blog/${encodeURIComponent(slug)}`)
   window.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
@@ -53,6 +38,7 @@ export function goToPost(slug: string) {
 // 🛡️ سه‌حالته و صادقانه: loading / failed (خطای واقعی شبکه/سرور) / خالیِ واقعی.
 // خطا هرگز به «خالی» فریب داده نمی‌شود — کاربر دکمهٔ Retry می‌بیند نه «مقاله‌ای نیست».
 export function usePosts() {
+  const pathname = usePathname()
   const [posts, setPosts] = useState<BlogPost[]>([])
   const [loading, setLoading] = useState(true)
   const [failed, setFailed] = useState(false)
@@ -74,11 +60,9 @@ export function usePosts() {
 
   useEffect(() => {
     load()
-    // با هر ناوبری (تغییر hash) مقاله‌ها دوباره واکشی شوند تا مقاله‌های
+    // با هر ناوبری بین روت‌ها مقاله‌ها دوباره واکشی شوند تا مقاله‌های
     // جدیدِ اضافه‌شده از پنل مدیریت بلافاصله دیده شوند
-    window.addEventListener('hashchange', load)
-    return () => window.removeEventListener('hashchange', load)
-  }, [load])
+  }, [load, pathname])
 
   return { posts, loading, failed, reload: load }
 }
@@ -251,9 +235,10 @@ interface PostCardProps {
   compact?: boolean
 }
 
-// کارت مقاله — با کلیک به صفحهٔ خود مقاله (#/blog/slug) می‌رود
+// کارت مقاله — لینک واقعی به /blog/slug (خزنده‌پذیر برای گوگل)
 export function PostCard({ post, index, compact = false }: PostCardProps) {
   const badge = tagBadge[post.tag] ?? tagBadge.news
+  const href = `/blog/${encodeURIComponent(post.slug)}`
 
   return (
     <article
@@ -263,8 +248,8 @@ export function PostCard({ post, index, compact = false }: PostCardProps) {
       style={{ animationDelay: `${index * 70}ms` }}
     >
       {/* کاور تصویری یا گرادیان برند */}
-      <button
-        onClick={() => goToPost(post.slug)}
+      <Link
+        href={href}
         className={`relative block w-full ${
           compact ? 'h-36' : 'h-44'
         } cursor-pointer overflow-hidden`}
@@ -282,7 +267,7 @@ export function PostCard({ post, index, compact = false }: PostCardProps) {
             {formatViews(post.views)}
           </span>
         )}
-      </button>
+      </Link>
 
       <div className={`flex flex-col flex-1 ${compact ? 'p-5' : 'p-6'}`}>
         <div className="flex items-center gap-3 text-xs text-brown-light/80 mb-3">
@@ -305,14 +290,14 @@ export function PostCard({ post, index, compact = false }: PostCardProps) {
         <p className={`text-sm text-brown-light leading-relaxed mb-4 ${compact ? 'line-clamp-2' : 'line-clamp-3'}`}>
           {post.excerpt}
         </p>
-        <button
-          onClick={() => goToPost(post.slug)}
+        <Link
+          href={href}
           className="mt-auto self-start inline-flex items-center gap-1.5 text-sm font-semibold text-sage-dark hover:gap-2.5 transition-all cursor-pointer"
           aria-label={`${siteContent.blog.readMore} — ${post.title}`}
         >
           {siteContent.blog.readMore}
           <ArrowRight className="w-4 h-4" />
-        </button>
+        </Link>
       </div>
     </article>
   )

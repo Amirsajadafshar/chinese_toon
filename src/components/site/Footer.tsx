@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useState } from 'react'
+import Link from 'next/link'
 import { Mail, Send } from 'lucide-react'
 import { siteContent, PageKey } from '@/content/site-content'
 import { useCloseOnNavigate } from './use-nav-close'
@@ -142,12 +143,12 @@ export function Footer({ onNavigate, onToast }: FooterProps) {
             <ul className="space-y-2.5">
               {siteContent.navigation.map((item) => (
                 <li key={item.key}>
-                  <button
-                    onClick={() => onNavigate(item.key as PageKey)}
+                  <Link
+                    href={item.key === 'home' ? '/' : `/${item.key}`}
                     className="text-sm text-[#FFF7E8]/60 hover:text-sage-light transition-colors cursor-pointer"
                   >
                     {item.label}
-                  </button>
+                  </Link>
                 </li>
               ))}
             </ul>

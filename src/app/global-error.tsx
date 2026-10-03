@@ -95,7 +95,7 @@ export default function GlobalError({
                 } catch {
                   /* خروج به خانه */
                 }
-                window.location.hash = '#/'
+                window.location.assign('/')
               }}
               style={{
                 padding: '12px 20px',

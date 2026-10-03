@@ -1,16 +1,15 @@
 'use client'
 
 import { useEffect } from 'react'
+import { usePathname } from 'next/navigation'
 
 // ---------------------------------------------------------------------
-//  با هر تغییر صفحه (تغییر hash) پنجره‌های دیالوگ بسته شوند
-//  چون همهٔ صفحه‌ها همیشه رندر می‌مانند، دیالوگ‌ها بدون این قلاب
-//  بعد از ناوبری هم باز می‌مانند.
+//  با هر تغییر مسیر پنجره‌های دیالوگ بسته شوند (فاز SEO — مسیر واقعی).
+//  دیالوگ‌های باز درون یک صفحه با ناوبری به مسیر دیگر باید بسته شوند.
 // ---------------------------------------------------------------------
 export function useCloseOnNavigate(close: () => void) {
+  const pathname = usePathname()
   useEffect(() => {
-    const onHashChange = () => close()
-    window.addEventListener('hashchange', onHashChange)
-    return () => window.removeEventListener('hashchange', onHashChange)
-  }, [close])
+    close()
+  }, [close, pathname])
 }

@@ -76,14 +76,6 @@ export function CommunityReviews() {
 
   useEffect(() => {
     load()
-    const onHash = () => {
-      const h = window.location.hash
-      if (h.startsWith('#/reviews')) load()
-    }
-    window.addEventListener('hashchange', onHash)
-    return () => {
-      window.removeEventListener('hashchange', onHash)
-    }
   }, [load])
 
   // ❤️ تاگل لایک — شمارندهٔ جدید فقط از پاسخ سرور؛ خطا = بدون تغییر قلابی

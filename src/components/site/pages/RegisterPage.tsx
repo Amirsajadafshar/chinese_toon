@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { ArrowRight, BookOpen, CalendarDays, Check, Clock, Globe2, Info, Loader2, Lock, TicketPercent, TriangleAlert, UserRound, Wallet, X } from 'lucide-react'
+import { appNavigate } from '@/lib/nav'
 import { siteContent } from '@/content/site-content'
 import { useUser } from '@/lib/user-store'
 import { SUPPORTED_TIMEZONES, timezoneLabel } from '@/lib/timezones'
@@ -48,9 +49,9 @@ function classTypeKeyFor(type: string): 'group' | 'private' | 'both' {
 // (Back باید به «صفحه‌ای که پرداخت از آن شروع شد» برگردد — اینجا صفحهٔ ثبت‌نام)
 function rememberPayOrigin() {
   try {
-    const h = window.location.hash
-    if (h.startsWith('#/') && !h.startsWith('#/pay')) {
-      sessionStorage.setItem('ct-pay-origin', h)
+    const path = window.location.pathname + window.location.search
+    if (path.startsWith('/') && !path.startsWith('/pay')) {
+      sessionStorage.setItem('ct-pay-origin', path)
     }
   } catch {
     // بی‌اهمیت — صفحهٔ پرداخت در نبود مبدأ، fallback امن دارد
@@ -77,11 +78,8 @@ const selectedClassListeners = new Set<() => void>()
 
 function subscribeSelectedClass(callback: () => void) {
   selectedClassListeners.add(callback)
-  // با ناوبری هم همگام شود (مثلاً دوباره برگشتن به فرم)
-  window.addEventListener('hashchange', callback)
   return () => {
     selectedClassListeners.delete(callback)
-    window.removeEventListener('hashchange', callback)
   }
 }
 
@@ -540,34 +538,13 @@ export function RegisterPage({ onToast }: RegisterPageProps) {
         clearInterval(iv)
         setPayCount(null)
         rememberPayOrigin()
-        window.location.hash = `/pay/new?product=${encodeURIComponent(payTarget)}`
+        appNavigate(`/pay/new?product=${encodeURIComponent(payTarget)}`)
         return
       }
       setPayCount(left)
     }, 1000)
     return () => clearInterval(iv)
   }, [submitted, payTarget, paySkipped])
-
-  // 🔄 فاز ۶۱ — ورود دوباره به نمای ثبت‌نام (hashchange به ‎#/register) همیشه
-  // فرم را نشان می‌دهد، نه Thank you باقی‌ماندهٔ ثبت قبلی — مخصوصاً بعد از
-  // «Choose your course» دیالوگ اکانت. مقادیر فیلدها حفظ می‌شوند؛ فقط حالتِ
-  // «ثبت‌شده» و کارت پرداختِ کهنه پاک می‌شود.
-  useEffect(() => {
-    let wasHere = window.location.hash.startsWith('#/register')
-    const onHash = () => {
-      const here = window.location.hash.startsWith('#/register')
-      if (here && !wasHere) {
-        setSubmitted(false)
-        setPayCount(null)
-        setPaySkipped(true)
-        setPaidCourse(null)
-        setError('')
-      }
-      wasHere = here
-    }
-    window.addEventListener('hashchange', onHash)
-    return () => window.removeEventListener('hashchange', onHash)
-  }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -703,7 +680,7 @@ export function RegisterPage({ onToast }: RegisterPageProps) {
                       <button
                         type="button"
                         onClick={() => {
-                          window.location.hash = '/account'
+                          appNavigate('/account')
                         }}
                         className="text-xs font-semibold text-sage-dark hover:underline cursor-pointer flex-shrink-0"
                       >
@@ -1084,7 +1061,7 @@ export function RegisterPage({ onToast }: RegisterPageProps) {
                         onClick={() => {
                           setPaySkipped(true)
                           rememberPayOrigin()
-                          window.location.hash = `/pay/new?product=${encodeURIComponent(payTarget)}`
+                          appNavigate(`/pay/new?product=${encodeURIComponent(payTarget)}`)
                         }}
                         className="bg-sage text-brown-dark px-6 py-3 rounded-xl text-sm font-bold hover:bg-sage-dark transition-colors cursor-pointer inline-flex items-center justify-center gap-2 min-h-[48px]"
                       >

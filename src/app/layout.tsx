@@ -1,14 +1,25 @@
 import type { Metadata, Viewport } from "next";
 import Script from "next/script";
-import { Poppins } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
 import { siteContent } from "@/content/site-content";
+import { SiteChrome } from "@/components/site/site-shell";
 
-const poppins = Poppins({
+// 🚀 فاز سرعت — Poppins به‌جای next/font/google (که در بیلد به fonts.googleapis.com
+// وابسته بود و در شبکه‌های فیلترشده بیلد را می‌شکند) به‌صورت محلی self-host می‌شود:
+//  • فایل‌ها فقط ~۸KB وزن دارند (subset لاتین) و از همان دامنه serve می‌شوند
+//  • preload خودکار + صفر جابه‌جایی چیدمان (fallback-adjusted) حفظ می‌شود
+const poppins = localFont({
   variable: "--font-poppins",
-  subsets: ["latin"],
-  weight: ["300", "400", "500", "600", "700"],
+  display: "swap",
+  src: [
+    { path: "./fonts/poppins-300.woff2", weight: "300", style: "normal" },
+    { path: "./fonts/poppins-400.woff2", weight: "400", style: "normal" },
+    { path: "./fonts/poppins-500.woff2", weight: "500", style: "normal" },
+    { path: "./fonts/poppins-600.woff2", weight: "600", style: "normal" },
+    { path: "./fonts/poppins-700.woff2", weight: "700", style: "normal" },
+  ],
 });
 
 const SITE_URL = siteContent.contact.siteUrl; // از فایل محتوا — برای سئو و شبکه‌های اجتماعی
@@ -138,7 +149,8 @@ export default function RootLayout({
         <Script id="ct-theme" strategy="beforeInteractive">
           {`(function(){try{var t=localStorage.getItem('ct-theme');if(t==='dark'||(!t&&window.matchMedia('(prefers-color-scheme: dark)').matches)){document.documentElement.classList.add('dark')}}catch(e){}})();`}
         </Script>
-        {children}
+        {/* 🧭 پوستهٔ مشترک روت‌ها — هدر/فوتر/توست + کانتکست ناوبری (فاز SEO) */}
+        <SiteChrome>{children}</SiteChrome>
         <Toaster />
         {/* 🔍 داده‌های ساخت‌یافته برای موتورهای جستجو */}
         <script

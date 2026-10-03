@@ -53,7 +53,7 @@ export default function ErrorPage({
               } catch {
                 /* fallback به خانه */
               }
-              window.location.hash = '#/'
+              window.location.assign('/')
             }}
             className="px-5 py-3 rounded-xl border border-sage-light/60 bg-cream/60 text-brown-dark text-sm font-medium hover:bg-cream transition-colors focus:outline-none focus:ring-[3px] focus:ring-sage/20"
           >

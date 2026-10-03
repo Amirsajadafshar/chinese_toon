@@ -1,23 +1,9 @@
 import type { NextConfig } from "next";
 
-// 🧭 صفحات سایت hash-based هستند (#/classes و...). این ریدایرکت‌ها باعث می‌شوند
-// لینک‌های مستقیم مثل chinese-toon.com/classes به‌جای 404 به /#/classes بروند
-// (اشتراک‌گذاری لینک، SEO و تجربهٔ کاربر بهتر).
-const PAGE_PATHS = [
-  "classes",
-  "learn",
-  "about",
-  "blog",
-  "support",
-  "register",
-  "admin",
-];
-
-const hashRedirects = PAGE_PATHS.map((p) => ({
-  source: `/${p}`,
-  destination: `/#/${p}`,
-  permanent: false,
-}));
+// 🧭 فاز SEO — سایت به روت‌های واقعی App Router (/classes، /blog/...) تبدیل شد،
+// پس ریدایرکت‌های hash قبلی (/classes → /#/classes) حذف شدند: هر نما آدرس
+// مستقل و 200-OK دارد. لینک‌های قدیمی ‎/#/xxx در SiteChrome (useLegacyHashRedirect)
+// سمت کلاینت به روت واقعی ریدایرکت می‌شوند.
 
 const nextConfig: NextConfig = {
   output: "standalone",
@@ -31,9 +17,6 @@ const nextConfig: NextConfig = {
   reactStrictMode: false,
   // 🛡️ سخت‌سازی امنیتی (فاز ۴۹) — افشای نسخهٔ فریمورک در هدر X-Powered-By خاموش
   poweredByHeader: false,
-  async redirects() {
-    return hashRedirects;
-  },
   // 🛡️ هدرهای امنیتی پایه (فاز ۲۲) — مقاوم‌سازی در برابر کلیک‌جکینگ،
   // MIME-sniffing و نشت اطلاعات ارجاع
   async headers() {

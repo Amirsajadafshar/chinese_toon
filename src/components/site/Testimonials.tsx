@@ -74,14 +74,9 @@ export function Testimonials() {
         })
     }
     load()
-    // با هر ورود به صفحهٔ نظرات تازه شود تا تغییرات پنل فوراً دیده شود
-    const onHash = () => {
-      if (window.location.hash.startsWith('#/reviews')) load()
-    }
-    window.addEventListener('hashchange', onHash)
+    // صفحه در هر ناوبری از نو mount می‌شود — داده تازه می‌آید
     return () => {
       cancelled = true
-      window.removeEventListener('hashchange', onHash)
     }
   }, [])
 

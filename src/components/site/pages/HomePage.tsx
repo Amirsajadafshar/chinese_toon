@@ -23,6 +23,7 @@ import { HeroScene } from '../HeroScene'
 import { CurveDivider } from '../CurveDivider'
 import { Leaflet } from '../ToonBranch'
 import { siteContent, PageKey } from '@/content/site-content'
+import { appNavigate } from '@/lib/nav'
 
 const c = siteContent.home
 
@@ -328,7 +329,7 @@ export function HomePage({ onNavigate }: HomePageProps) {
                     onClick={() => {
                       // لینک پایدار کلاس — اگر slug معتبر بود مستقیم به جزئیات همان کلاس
                       if (/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(card.slug)) {
-                        window.location.hash = `/classes/${card.slug}`
+                        appNavigate(`/classes/${card.slug}`)
                       } else {
                         onNavigate('classes')
                       }
@@ -409,7 +410,7 @@ export function HomePage({ onNavigate }: HomePageProps) {
                         } catch {
                           /* حافظه در دسترس نیست — رفتار ساده */
                         }
-                        window.location.hash = `/lesson/${card.lesson}`
+                        appNavigate(`/lesson/${card.lesson}`)
                         window.scrollTo({ top: 0, behavior: 'smooth' })
                       }}
                       className="text-sm font-medium text-sage-dark flex items-center gap-1 hover:gap-2 transition-all cursor-pointer"

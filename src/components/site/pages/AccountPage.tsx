@@ -1,7 +1,7 @@
 'use client'
 
 // ---------------------------------------------------------------------------
-// 👤 صفحهٔ حساب کاربری (#/account) — فاز ۳۰
+// 👤 صفحهٔ حساب کاربری (/account) — فاز ۳۰
 //
 // سه نما: ① کارت تب‌دار ثبت‌نام/ورود (کاربر مهمان) ② پروفایل + کلاس‌ها و
 // پرداخت‌ها (کاربر واردشده) ③ اسکلتون ظریف تا رسیدن پاسخ /api/auth/me.
@@ -10,6 +10,7 @@
 // ---------------------------------------------------------------------------
 
 import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import {
   ArrowRight,
   BookOpen,
@@ -33,6 +34,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { COUNTRIES, flagFromCode } from '@/lib/countries'
 import { refreshUser, logoutUser, useUser, OrderLike } from '@/lib/user-store'
 import { resilientJsonFetch } from '@/lib/client-fetch'
+import { appNavigate } from '@/lib/nav'
 
 const c = siteContent.account
 
@@ -46,17 +48,17 @@ const labelCls = 'block text-sm font-medium text-brown-dark mb-2'
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
 
 // 🔁 مقصد ذخیره‌شدهٔ پرداخت — اگر کاربر از صفحهٔ پرداخت گیت‌شده بیاید، بعد از
-// ورود/ثبت‌نام موفق به همان hash برمی‌گردد (با CheckoutPage هماهنگ است)
+// ورود/ثبت‌نام موفق به همان مسیر برمی‌گردد (با CheckoutPage هماهنگ است)
 const PAY_REDIRECT_KEY = 'ct-pay-redirect'
 
-function consumePayRedirect(): boolean {
+function consumePayRedirect(go: (path: string) => void): boolean {
   try {
     const target = sessionStorage.getItem(PAY_REDIRECT_KEY)
-    // 🛡️ فاز ۳۶ — فقط مسیرهای درون‌برنامه‌ای معتبر (شروع با #/) پذیرفته می‌شوند
+    // 🛡️ فاز ۳۶ — فقط مسیرهای درون‌برنامه‌ای معتبر (شروع با /) پذیرفته می‌شوند
     // تا هیچ مقدار خراب/دستکاری‌شده‌ای به ناوبری تزریق نشود
-    if (target && target.startsWith('#/')) {
+    if (target && target.startsWith('/')) {
       sessionStorage.removeItem(PAY_REDIRECT_KEY)
-      window.location.hash = target
+      go(target)
       return true
     }
     if (target) sessionStorage.removeItem(PAY_REDIRECT_KEY)
@@ -78,23 +80,20 @@ function formatDate(iso: string): string {
 interface AccountPageProps {
   onNavigate: (page: PageKey) => void
   onToast: (message: string) => void
+  /** ناوبری به مسیر دلخواه (/forgot-password، /pay/<ref> و…) — روت‌های واقعی */
+  go: (path: string) => void
 }
 
-export function AccountPage({ onNavigate, onToast }: AccountPageProps) {
+export function AccountPage({ onNavigate, onToast, go }: AccountPageProps) {
   const { loading, user, orders } = useUser()
   const [tab, setTab] = useState<'register' | 'login'>('register')
 
-  // 🔁 ‎#/account?tab=login — بعد از تغییر رمز، لینک «Go to Sign In» اینجا می‌آید.
-  // ⚠️ صفحات سایت mounted می‌مانند (فقط display عوض می‌شود) — پس effect باید به
-  // hashchange هم گوش بدهد، نه فقط در mount اولیه؛ وگرنه تب عوض نمی‌شود.
+  // 🔁 /account?tab=login — بعد از تغییر رمز، لینک «Go to Sign In» اینجا می‌آید.
+  // صفحه در هر ناوبری از نو mount می‌شود، پس خواندن پارامتر در mount کافی است.
+  const searchParams = useSearchParams()
   useEffect(() => {
-    const applyFromHash = () => {
-      if (window.location.hash.includes('tab=login')) setTab('login')
-    }
-    applyFromHash()
-    window.addEventListener('hashchange', applyFromHash)
-    return () => window.removeEventListener('hashchange', applyFromHash)
-  }, [])
+    if (searchParams.get('tab') === 'login') setTab('login')
+  }, [searchParams])
 
   // 👁️ نشان‌دهندهٔ گذرواژه (فرم ثبت‌نام و ورود)
   const [showRegPw, setShowRegPw] = useState(false)
@@ -218,7 +217,7 @@ export function AccountPage({ onNavigate, onToast }: AccountPageProps) {
         onToast(c.welcomeToast)
         await refreshUser()
         // اگر از دروازهٔ پرداخت آمده بودیم، به همان‌جا برمی‌گردیم
-        consumePayRedirect()
+        consumePayRedirect(go)
         return
       }
 
@@ -266,7 +265,7 @@ export function AccountPage({ onNavigate, onToast }: AccountPageProps) {
         onToast(c.welcomeBackToast)
         await refreshUser()
         // اگر از دروازهٔ پرداخت آمده بودیم، به همان‌جا برمی‌گردیم
-        const returnedToPay = consumePayRedirect()
+        const returnedToPay = consumePayRedirect(go)
         // 🗣️ فاز ۶۱ — ورود از خارج از جریان کلاس‌ها + بدون هیچ ثبت‌نامی →
         // می‌پرسیم: «ثبت‌نام کلاس را کامل می‌کنی؟» (اطلاعات پایهٔ حساب
         // حتماً لازم است و به‌طور خودکار در فرم ثبت‌نام استفاده می‌شود)
@@ -648,11 +647,11 @@ export function AccountPage({ onNavigate, onToast }: AccountPageProps) {
                         <label htmlFor="acc-login-password" className={`${labelCls} mb-0`}>
                           {c.password} *
                         </label>
-                        {/* 🔁 فراموشی رمز — به نمای اختصاصی #/forgot-password می‌رود */}
+                        {/* 🔁 فراموشی رمز — به روت اختصاصی /forgot-password می‌رود */}
                         <button
                           type="button"
                           onClick={() => {
-                            window.location.hash = '/forgot-password'
+                            go('/forgot-password')
                           }}
                           className="text-xs font-semibold text-sage-dark hover:underline cursor-pointer min-h-[44px] inline-flex items-center"
                         >
@@ -769,7 +768,7 @@ export function AccountPage({ onNavigate, onToast }: AccountPageProps) {
                 type="button"
                 onClick={() => {
                   setAskRegister(false)
-                  window.location.hash = '/register'
+                  go('/register')
                 }}
                 className="bg-sage text-brown-dark flex-1 px-5 py-3 rounded-xl text-sm font-bold hover:bg-sage-dark transition-colors cursor-pointer inline-flex items-center justify-center gap-2 min-h-[48px]"
               >
@@ -979,7 +978,7 @@ function OrderRow({ order }: { order: OrderLike }) {
           <button
             type="button"
             onClick={() => {
-              window.location.hash = `/pay/${order.ref}`
+              appNavigate(`/pay/${order.ref}`)
             }}
             className="bg-sage text-brown-dark px-4 py-2.5 rounded-xl text-xs font-bold hover:bg-sage-dark transition-colors cursor-pointer inline-flex items-center gap-1.5 min-h-[44px]"
           >

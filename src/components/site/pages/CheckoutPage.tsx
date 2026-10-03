@@ -1,7 +1,7 @@
 'use client'
 
 // ---------------------------------------------------------------------------
-// 💳 صفحهٔ پرداخت دستی کارت بانکی — ‎#/pay/<ref> (یا ‎#/pay/new?product=<id>)
+// 💳 صفحهٔ پرداخت دستی کارت بانکی — /pay/<ref> (یا /pay/new?product=<id>)
 // (فاز ۵۹ — جایگزین کامل صفحهٔ USDT؛ جریان: سفارش → کارت بانکی → واریز دقیق
 //  مبلغ نهایی → آپلود رسید → بررسی ادمین → تأیید/ردّ)
 //
@@ -32,6 +32,7 @@ import {
 import { siteContent, PageKey } from '@/content/site-content'
 import { useUser } from '@/lib/user-store'
 import { ReceiptUploader } from '@/components/site/ReceiptUploader'
+import { useSite } from '@/components/site/site-shell'
 
 const p = siteContent.payments.ui
 const a = siteContent.account // 🔒 متن‌های دروازهٔ حساب
@@ -76,6 +77,9 @@ interface CheckoutPageProps {
   orderRef: string // خالی = حالت سفارش جدید
   initialProductId?: string
   onNavigate: (page: PageKey) => void
+  /** ناوبری روت واقعی — back و گیت حساب (فاز SEO) */
+  go: (path: string) => void
+  replace: (path: string) => void
 }
 
 /** نمایش شمارهٔ کارت در گروه‌های ۴تایی فقط برای خوانایی — مقدار واقعی عوض نمی‌شود */
@@ -93,20 +97,10 @@ function formatDateTime(iso: string): string {
   }
 }
 
-// 🔁 تعویض بی‌صدای hash بدون افزودن ورودی جدید به history مرورگر.
-// قبلاً ساخت سفارش با push انجام می‌شد و «#/pay/new» در history می‌ماند؛ نتیجه:
+// 🔁 تعویض بی‌صدای مسیر بدون افزودن ورودی جدید به history مرورگر.
+// قبلاً ساخت سفارش با push انجام می‌شد و «/pay/new» در history می‌ماند؛ نتیجه:
 // دکمهٔ Back مرورگر به pay/new برمی‌گشت و component دوباره mount و یک سفارش
-// تکراری می‌ساخت. با replaceState ورودی pay/new خودش به pay/<ref> تبدیل می‌شود.
-function replaceHash(nextHash: string) {
-  const normalized = nextHash.startsWith('#') ? nextHash : `#${nextHash}`
-  try {
-    window.history.replaceState(null, '', normalized)
-  } catch {
-    window.location.hash = normalized.slice(1)
-    return
-  }
-  window.dispatchEvent(new HashChangeEvent('hashchange'))
-}
+// تکراری می‌ساخت. با replace مسیر pay/new خودش به pay/<ref> تبدیل می‌شود.
 
 // ---------------------------------------------------------------------------
 // بلوک‌های نمایشی کوچک
@@ -325,7 +319,7 @@ function BankCardPanel({ bank }: { bank: BankCardView }) {
 // صفحهٔ اصلی
 // ---------------------------------------------------------------------------
 
-export function CheckoutPage({ orderRef, initialProductId, onNavigate }: CheckoutPageProps) {
+export function CheckoutPage({ orderRef, initialProductId, onNavigate, go, replace }: CheckoutPageProps) {
   const [order, setOrder] = useState<OrderView | null>(null)
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
@@ -534,7 +528,7 @@ export function CheckoutPage({ orderRef, initialProductId, onNavigate }: Checkou
           /* */
         }
         // 🔁 ورودی pay/new در history با ‎#/pay/<ref> جایگزین می‌شود (ضد Back-سفارش تکراری)
-        replaceHash(`#/pay/${data.order.ref}`)
+        replace(`/pay/${data.order.ref}`)
       } else if (res.status === 503) {
         setConfigError(p.notConfigured)
       } else if (data?.code === 'BAD_PRODUCT') {
@@ -634,13 +628,13 @@ export function CheckoutPage({ orderRef, initialProductId, onNavigate }: Checkou
     } catch {
       origin = ''
     }
-    const current = window.location.hash
-    if (origin.startsWith('#/') && !origin.startsWith('#/pay') && origin !== current) {
-      window.location.hash = origin.slice(1)
+    const current = window.location.pathname + window.location.search
+    if (origin.startsWith('/') && !origin.startsWith('/pay') && origin !== current) {
+      go(origin)
       return
     }
-    window.location.hash = '/classes'
-  }, [])
+    go('/classes')
+  }, [go])
 
   const status = order?.status ?? 'PENDING'
   const isLegacyUsdt = order?.paymentMethod === 'USDT_TRON'
@@ -666,11 +660,11 @@ export function CheckoutPage({ orderRef, initialProductId, onNavigate }: Checkou
   if (gated) {
     const continueToAccount = () => {
       try {
-        sessionStorage.setItem('ct-pay-redirect', window.location.hash)
+        sessionStorage.setItem('ct-pay-redirect', window.location.pathname + window.location.search)
       } catch {
         // بدون حافظه فقط به صفحهٔ حساب می‌رویم
       }
-      replaceHash('#/account')
+      replace('/account')
     }
     return (
       <CheckoutShell>

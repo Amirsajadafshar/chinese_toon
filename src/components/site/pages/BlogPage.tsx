@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { usePathname } from 'next/navigation'
 import {
   Newspaper,
   SearchX,
@@ -26,7 +27,6 @@ import { CurveDivider } from '../CurveDivider'
 import { Leaflet } from '../ToonBranch'
 import {
   usePosts,
-  usePostSlug,
   goToPost,
   PostCard,
   PostContent,
@@ -38,6 +38,7 @@ import {
   formatViews,
   BlogPost,
 } from '../blog-parts'
+import { appNavigate } from '@/lib/nav'
 
 const b = siteContent.blog
 
@@ -103,7 +104,8 @@ function ContinueReading() {
   const [last, setLast] = useState<LastRead | null>(null)
   const [hidden, setHidden] = useState(true)
 
-  // با ورود به نمای لیست (تغییر hash) وضعیت ذخیره‌شده خوانده می‌شود
+  // با ورود به نمای لیست (تغییر مسیر) وضعیت ذخیره‌شده خوانده می‌شود
+  const pathname = usePathname()
   useEffect(() => {
     const sync = () => {
       setLast(readLastRead())
@@ -116,12 +118,10 @@ function ContinueReading() {
       setHidden(dismissed)
     }
     sync()
-    window.addEventListener('hashchange', sync)
-    return () => window.removeEventListener('hashchange', sync)
-  }, [])
+  }, [pathname])
 
-  // در نمای مقاله فعال نیست — فقط لیست
-  const slug = usePostSlug()
+  // در نمای مقاله فعال نیست — فقط لیست (slug از روت فعلی: /blog/<slug>)
+  const slug = pathname.startsWith('/blog/') ? decodeURIComponent(pathname.split('/')[2] || '') : ''
   if (!siteContent.blog.continueEnabled || hidden || !last || slug) return null
 
   return (
@@ -305,7 +305,7 @@ function TrendingStrip({ posts }: { posts: BlogPost[] }) {
       </h2>
       <ol className="grid sm:grid-cols-3 gap-4">
         {top.map((p, i) => (
-          <li key={p.id}>
+          <li key={p.id} className="min-w-0">
             <button
               onClick={() => goToPost(p.slug)}
               className="group w-full text-left bg-white/85 hover:bg-white rounded-2xl border border-white/70 hover:border-sage/50 px-4 py-3.5 flex items-center gap-3 transition-all cursor-pointer shadow-sm hover:shadow-md hover:-translate-y-0.5"
@@ -314,7 +314,7 @@ function TrendingStrip({ posts }: { posts: BlogPost[] }) {
               <span className="text-xl flex-shrink-0" aria-hidden="true">
                 {medals[i]}
               </span>
-              <span className="min-w-0">
+              <span className="min-w-0 flex-1">
                 <span className="block text-sm font-semibold text-brown-dark truncate group-hover:text-sage-dark transition-colors">
                   {p.title}
                 </span>
@@ -484,8 +484,6 @@ function PostDetail({ post, all }: { post: BlogPost; all: BlogPost[] }) {
       }
     }
     sync()
-    window.addEventListener('hashchange', sync)
-    return () => window.removeEventListener('hashchange', sync)
   }, [])
   const changeFont = (s: ArticleFontStep) => {
     setFontStep(s)
@@ -583,7 +581,7 @@ function PostDetail({ post, all }: { post: BlogPost; all: BlogPost[] }) {
           <div className="mt-10 text-center">
             <button
               onClick={() => {
-                window.location.hash = '/blog'
+                appNavigate('/blog')
                 window.scrollTo({ top: 0, behavior: 'smooth' })
               }}
               className="bg-white border border-sage-light/50 text-brown px-6 py-3 rounded-full text-sm font-semibold hover:border-sage hover:text-sage-dark transition-colors cursor-pointer inline-flex items-center gap-2"
@@ -599,11 +597,11 @@ function PostDetail({ post, all }: { post: BlogPost; all: BlogPost[] }) {
 }
 
 // ---------------------------------------------------------------------
-//  صفحهٔ وبلاگ: لیست (#/blog) و مقالهٔ تکی (#/blog/slug)
+//  صفحهٔ وبلاگ: لیست (/blog) و مقالهٔ تکی (/blog/slug)
 // ---------------------------------------------------------------------
-export function BlogPage() {
+export function BlogPage({ slug: routeSlug = '' }: { slug?: string }) {
   const { posts, loading, failed, reload } = usePosts()
-  const slug = usePostSlug()
+  const slug = routeSlug || null
   const [filter, setFilter] = useState('all')
   const [query, setQuery] = useState('')
 
@@ -704,7 +702,7 @@ export function BlogPage() {
           <p className="text-sm text-brown-light mb-8">{b.notFoundText}</p>
           <button
             onClick={() => {
-              window.location.hash = '/blog'
+              appNavigate('/blog')
               window.scrollTo({ top: 0, behavior: 'smooth' })
             }}
             className="bg-sage text-brown-dark px-6 py-3 rounded-full text-sm font-semibold hover:bg-sage-dark transition-colors cursor-pointer inline-flex items-center gap-2"

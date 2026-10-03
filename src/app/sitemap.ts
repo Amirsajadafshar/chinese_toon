@@ -2,42 +2,61 @@ import type { MetadataRoute } from "next";
 import { siteContent } from "@/content/site-content";
 
 // ---------------------------------------------------------------------------
-// 🗺️ sitemap.xml — native Next.js 16 Metadata API.
+// 🗺️ sitemap.xml — فاز SEO: روت‌های واقعی App Router.
 //
-// WHY ONLY `/` IS LISTED
-// ----------------------
-// Chinese Toon is a hash-based SPA: every public view (Classes, Learn, About,
-// Blog, Reviews, Support, Register) is rendered client-side from the single
-// HTTP route `/` and switched via `window.location.hash` (e.g. `/#/classes`).
+// قبلاً سایت یک SPA هش‌محور بود و فقط `/` در sitemap بود — نتیجه: گوگل تنها یک
+// URL ایندکس‌پذیر داشت و Search Console خطا می‌داد. حالا هر نما روت مستقل دارد:
 //
-//   • `https://www.chinesetoon.com/#/classes` is fetched by Google as
-//     `https://www.chinesetoon.com/` — the hash fragment is client-side only
-//     and is NOT a separate URL for search engines. Listing `/#/classes` would
-//     be a duplicate of `/`.
-//   • `https://www.chinesetoon.com/classes` (without hash) is a 307 redirect
-//     to `/#/classes` (see next.config.ts `hashRedirects`). Sitemaps must list
-//     final 200-OK canonical URLs only, never redirects.
-//   • There are no dynamic App Router pages (no `app/blog/[slug]/page.tsx`);
-//     blog posts live at `#/blog/<slug>` and are therefore NOT indexable as
-//     distinct URLs.
+//   /  /classes  /learn  /about  /blog  /reviews  /support  /register
+//   + مقاله‌های وبلاگ (/blog/<slug> — از دیتابیس، فقط published)
 //
-// So the only public, indexable, 200-OK canonical URL is `/`. Including
-// anything else would either be a duplicate or a redirect — both make Google
-// flag the sitemap as invalid.
+// روت‌های شخصی (account/admin/pay/lesson/forgot/reset) عمداً اینجا نیستند:
+//  • account/admin/pay — noindex هستند (metadata robots) و محتوای شخصی‌اند
+//  • lesson/<slug> — محتوای درسی از پنل تغییر می‌کند و برای جست‌وجو هدف نیست؛
+//    اگر روزی خواستید ایندکس شوند، همین‌جا با db.lesson اضافه کنید.
 //
-// The canonical domain (https://www.chinesetoon.com) comes from
-// siteContent.contact.siteUrl — the SAME source used by app/robots.ts and the
-// layout metadataBase — so the three can never drift apart on www/non-www.
+// دامنهٔ canonical (https://www.chinesetoon.com) از siteContent می‌آید — همان
+// منبع robots.ts و metadataBase — تا www/non-www هرگز واگرا نشود.
+//
+// ⚙️ revalidate: هر ساعت دوباره ساخته می‌شود (روی Vercel پس از اولین درخواست)
+// تا مقاله‌های جدید پنل ادمین بدون deploy تازه وارد sitemap شوند. اگر دیتابیس
+// در دسترس نباشد، sitemap فقط با روت‌های ثابت ساخته می‌شود (هرگز خطا نمی‌دهد).
 // ---------------------------------------------------------------------------
 
-export default function sitemap(): MetadataRoute.Sitemap {
+export const revalidate = 3600;
+
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const base = siteContent.contact.siteUrl.replace(/\/$/, "");
-  return [
-    {
-      url: `${base}/`,
-      lastModified: new Date(),
-      changeFrequency: "weekly",
-      priority: 1,
-    },
+
+  const staticRoutes: MetadataRoute.Sitemap = [
+    { url: `${base}/`, changeFrequency: "weekly", priority: 1 },
+    { url: `${base}/classes`, changeFrequency: "weekly", priority: 0.9 },
+    { url: `${base}/learn`, changeFrequency: "weekly", priority: 0.8 },
+    { url: `${base}/about`, changeFrequency: "monthly", priority: 0.6 },
+    { url: `${base}/blog`, changeFrequency: "daily", priority: 0.8 },
+    { url: `${base}/reviews`, changeFrequency: "weekly", priority: 0.5 },
+    { url: `${base}/support`, changeFrequency: "monthly", priority: 0.5 },
+    { url: `${base}/register`, changeFrequency: "monthly", priority: 0.7 },
   ];
+
+  let blogPosts: MetadataRoute.Sitemap = [];
+  try {
+    const { db } = await import("@/lib/db");
+    const posts = await db.post.findMany({
+      where: { published: true },
+      select: { slug: true, updatedAt: true },
+      orderBy: { updatedAt: "desc" },
+      take: 500,
+    });
+    blogPosts = posts.map((p) => ({
+      url: `${base}/blog/${p.slug}`,
+      lastModified: p.updatedAt,
+      changeFrequency: "monthly" as const,
+      priority: 0.6,
+    }));
+  } catch {
+    // دیتابیس در دسترس نیست — sitemap بدون مقاله‌ها معتبر می‌ماند
+  }
+
+  return [...staticRoutes, ...blogPosts];
 }

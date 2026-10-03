@@ -6,6 +6,7 @@ import { InstagramIcon, TelegramIcon } from '../brand-icons'
 import { Flashcards } from '../Flashcards'
 import { ToneTrainer } from '../ToneTrainer'
 import { siteContent } from '@/content/site-content'
+import { appNavigate } from '@/lib/nav'
 
 const c = siteContent.learn
 
@@ -15,13 +16,6 @@ const colorMap = {
   peach: { bg: 'bg-peach-light/15', border: 'border-peach-light/20', tag: 'text-peach' },
   cream: { bg: 'bg-cream', border: 'border-sage-light/20', tag: 'text-sage-dark' },
 } as const
-
-// 🔎 خواندن پارامتر lesson از هش (#/learn?lesson=greetings)
-function lessonFromHash(): string {
-  const raw = window.location.hash.replace(/^#\/learn/, '').split('?')[1] ?? ''
-  const params = new URLSearchParams(raw)
-  return params.get('lesson') ?? ''
-}
 
 // 📚 شکل درس (کارت + واژه‌های مودال) — از دیتابیس یا فایل محتوا
 interface LessonContent {
@@ -75,7 +69,7 @@ export function LearnPage() {
       }))
     : (c.items as unknown as LessonCard[])
 
-  // 📚 فاز ۲۲: به‌جای مودال، هر درس صفحهٔ اختصاصی دارد: ‎#/lesson/<slug>
+  // 📚 فاز ۲۲: به‌جای مودال، هر درس صفحهٔ اختصاصی دارد: /lesson/<slug>
 
   // 🗄️ واژه‌های فلش‌کارت از دیتابیس (پنل ادمین) — تا وقتی خالی باشد
   // نسخهٔ پیش‌فرض فایل محتوا نمایش داده می‌شود
@@ -83,20 +77,14 @@ export function LearnPage() {
     { chinese: string; pinyin: string; meaning: string; example: string | null }[]
   | null>(null)
 
-  // 📚 ناوبری به صفحهٔ اختصاصی درس (لینک‌پذیر و قابل اشتراک‌گذاری)
+  // 📚 ناوبری به صفحهٔ اختصاصی درس (لینک‌پذیر و قابل اشتراک‌گذاری: /lesson/<slug>)
   const goToLesson = useCallback((slug: string) => {
     try {
       sessionStorage.removeItem('ct-lesson-return')
     } catch {
       // حافظه در دسترس نیست
     }
-    window.location.hash = `/lesson/${slug}`
-  }, [])
-
-  // 🔁 دیپ‌لینک قدیمی ‎#/learn?lesson=x → به صفحهٔ اختصاصی درس هدایت می‌شود
-  const redirectLegacyLink = useCallback(() => {
-    const l = lessonFromHash()
-    if (l) window.location.hash = `/lesson/${l}`
+    appNavigate(`/lesson/${encodeURIComponent(slug)}`)
   }, [])
 
   useEffect(() => {
@@ -134,23 +122,8 @@ export function LearnPage() {
         .catch(() => {})
     }
     loadData()
-    // چون کل سایت یک SPA است و صفحه‌ها رندر می‌مانند، با هر ورود به صفحهٔ Learn
-    // داده‌ها دوباره خوانده می‌شوند تا تغییرات پنل ادمین فوراً دیده شود
-    const onHash = () => {
-      const h = window.location.hash
-      if (h.startsWith('#/learn')) {
-        loadData()
-        // 🔁 دیپ‌لینک قدیمی ‎?lesson= → صفحهٔ اختصاصی درس
-        redirectLegacyLink()
-      }
-    }
-    window.addEventListener('hashchange', onHash)
-    // ورود مستقیم با دیپ‌لینک قدیمی ‎?lesson= (مثلاً از پنل ادمین)
-    const openTimer = setTimeout(redirectLegacyLink, 0)
     return () => {
       cancelled = true
-      window.removeEventListener('hashchange', onHash)
-      clearTimeout(openTimer)
     }
   }, [])
 

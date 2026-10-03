@@ -3,9 +3,9 @@
 // ---------------------------------------------------------------------------
 // 🔐 صفحهٔ بازیابی رمز عبور — فاز ۴۰
 //
-// دو نمای اختصاصی (hash-based، هم‌خانوادهٔ #/pay):
-//   • #/forgot-password            → فرم «ایمیل بده، لینک امن بفرست»
-//   • #/reset-password?token=…     → فرم «رمز جدید + تأیید» با توکن یک‌بارمصرف
+// دو روت اختصاصی (فاز SEO — روت واقعی):
+//   • /forgot-password              → فرم «ایمیل بده، لینک امن بفرست»
+//   • /reset-password?token=…       → فرم «رمز جدید + تأیید» با توکن یک‌بارمصرف
 //
 // امنیت UX:
 //   • پاسخ فراموشی همیشه عمومی است (وجود/عدم‌وجود حساب لو نمی‌رود).
@@ -17,6 +17,7 @@
 import { useState } from 'react'
 import { ArrowLeft, ArrowRight, Eye, EyeOff, KeyRound, Loader2, MailCheck, ShieldCheck, TriangleAlert } from 'lucide-react'
 import { siteContent } from '@/content/site-content'
+import { appNavigate } from '@/lib/nav'
 
 const c = siteContent.account
 
@@ -103,7 +104,7 @@ function ForgotForm() {
         <button
           type="button"
           onClick={() => {
-            window.location.hash = '/account?tab=login'
+            appNavigate('/account?tab=login')
           }}
           className="mt-8 bg-sage text-brown-dark px-8 py-3.5 rounded-2xl text-sm font-semibold hover:bg-sage-dark transition-colors cursor-pointer inline-flex items-center gap-2 min-h-[44px]"
         >
@@ -158,7 +159,7 @@ function ForgotForm() {
         <button
           type="button"
           onClick={() => {
-            window.location.hash = '/account?tab=login'
+            appNavigate('/account?tab=login')
           }}
           className="text-sage-dark font-semibold hover:underline cursor-pointer"
         >
@@ -242,7 +243,7 @@ function ResetForm({ token }: { token: string }) {
         <button
           type="button"
           onClick={() => {
-            window.location.hash = '/account?tab=login'
+            appNavigate('/account?tab=login')
           }}
           className="mt-8 bg-sage text-brown-dark px-8 py-3.5 rounded-2xl text-sm font-semibold hover:bg-sage-dark transition-colors cursor-pointer inline-flex items-center gap-2 min-h-[44px]"
         >
@@ -387,7 +388,7 @@ function InvalidView() {
         <button
           type="button"
           onClick={() => {
-            window.location.hash = '/forgot-password'
+            appNavigate('/forgot-password')
           }}
           className="bg-sage text-brown-dark px-8 py-3.5 rounded-2xl text-sm font-semibold hover:bg-sage-dark transition-colors cursor-pointer inline-flex items-center gap-2 min-h-[44px]"
         >
@@ -396,7 +397,7 @@ function InvalidView() {
         <button
           type="button"
           onClick={() => {
-            window.location.hash = '/account?tab=login'
+            appNavigate('/account?tab=login')
           }}
           className="px-8 py-3.5 rounded-2xl text-sm font-semibold border border-sage-light/50 bg-white/70 text-brown hover:border-sage transition-colors cursor-pointer inline-flex items-center gap-2 min-h-[44px]"
         >
