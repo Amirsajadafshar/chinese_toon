@@ -14,7 +14,7 @@ import { deriveOrderStatus, microToUsdString, type DerivedOrderStatus } from '@/
 export const dynamic = 'force-dynamic'
 
 export async function GET(req: NextRequest) {
-  if (!isAuthorized(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!(await isAuthorized(req))) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   try {
     const now = new Date()
     const d7 = new Date(Date.now() - 7 * 24 * 3600 * 1000)

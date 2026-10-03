@@ -23,7 +23,10 @@ const nextConfig: NextConfig = {
   output: "standalone",
   /* config options here */
   typescript: {
-    ignoreBuildErrors: true,
+    // 🛡️ فاز ۶۴ — خطاهای تایپ دیگر در بیلد نادیده گرفته نمی‌شوند؛
+    // ignoreBuildErrors=true اجازه داده بود کد خراب (مثل FaqVote غایب) تا
+    // پروداکشن برسد و در زمان اجرا 500 بدهد.
+    ignoreBuildErrors: false,
   },
   reactStrictMode: false,
   // 🛡️ سخت‌سازی امنیتی (فاز ۴۹) — افشای نسخهٔ فریمورک در هدر X-Powered-By خاموش

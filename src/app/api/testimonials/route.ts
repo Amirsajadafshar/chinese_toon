@@ -47,13 +47,13 @@ function isNotFound(e: unknown): boolean {
 
 export async function POST(req: NextRequest) {
   // ⛔️ ضداسپم: حداکثر ۶ ارسال در ۱۰ دقیقه برای هر IP
-  const rl = rateLimit('testimonials', req, 6, 10 * 60, 10 * 60)
+  const rl = await rateLimit('testimonials', req, 6, 10 * 60, 10 * 60)
   if (!rl.ok) return tooManyRequests(rl)
   // 🛡️ گارد مبدأ + سقف حجم بدنه — هم‌خوان با بقیهٔ APIهای mutation (فاز ۵۵)
   const guard = guardResponse(req)
   if (guard) return guard
 
-  const admin = isAuthorized(req)
+  const admin = await isAuthorized(req)
   try {
     const body = await req.json()
     const parsed = testimonialSchema.safeParse(body)
@@ -97,7 +97,7 @@ export async function POST(req: NextRequest) {
 
 export async function GET(req: NextRequest) {
   try {
-    const admin = isAuthorized(req)
+    const admin = await isAuthorized(req)
     const params = req.nextUrl.searchParams
     const onlyFeatured = params.get('featured') === '1'
     const scopeHome = params.get('scope') === 'home'
@@ -149,7 +149,7 @@ export async function GET(req: NextRequest) {
 
 // تأیید/رد + ویرایش کامل نظر (نام، متن، ستاره، منتخب) + بازگردانی — فقط مدیریت
 export async function PATCH(req: NextRequest) {
-  if (!isAuthorized(req)) {
+  if (!(await isAuthorized(req))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   const guard = guardResponse(req)
@@ -200,7 +200,7 @@ export async function PATCH(req: NextRequest) {
 
 // 🗄️ حذف نرم — بایگانی؛ رکورد و لایک‌هایش حفظ می‌شوند و از بایگانی قابل بازگردانی‌اند
 export async function DELETE(req: NextRequest) {
-  if (!isAuthorized(req)) {
+  if (!(await isAuthorized(req))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   const guard = guardResponse(req)

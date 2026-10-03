@@ -34,7 +34,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Switch } from '@/components/ui/switch'
 import { siteContent } from '@/content/site-content'
 import { SUPPORTED_TIMEZONES, timezoneLabel } from '@/lib/timezones'
-import { ClassDetailContent, type PublicClassItem } from '@/components/site/pages/ClassesPage'
+import { ClassDetailContent } from '@/components/site/pages/ClassesPage'
+import type { PublicClassItem } from '@/lib/classes/store'
 
 const a = siteContent.admin.classes
 const REGISTER_LEVELS = siteContent.register.levels // {key,label}[]
@@ -578,7 +579,7 @@ function ClassEditorDialog({
 
     setBusy(true)
     try {
-      const res = await fetch(isNew ? '/api/admin/classes' : `/api/admin/classes/${editId ?? seed.id}`, {
+      const res = await fetch(isNew ? '/api/admin/classes' : `/api/admin/classes/${editId ?? ''}`, {
         method: isNew ? 'POST' : 'PUT',
         headers: { 'Content-Type': 'application/json', 'x-admin-key': token },
         body: JSON.stringify(formToPayload(form)),
@@ -609,7 +610,7 @@ function ClassEditorDialog({
     } finally {
       setBusy(false)
     }
-  }, [form, isNew, editId, seed.id, token, onSaved, onOpenChange, onToast])
+  }, [form, isNew, editId, token, onSaved, onOpenChange, onToast])
 
   const previewItem = useMemo(() => formToPublicItem(form), [form])
 

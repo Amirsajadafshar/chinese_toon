@@ -13,7 +13,7 @@ import { siteContent } from '@/content/site-content'
 // ---------------------------------------------------------------------------
 
 export async function POST(req: NextRequest) {
-  if (!isAuthorized(req)) {
+  if (!(await isAuthorized(req))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   try {

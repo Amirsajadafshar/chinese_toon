@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
   const guard = guardResponse(req)
   if (guard) return guard
 
-  const rl = rateLimit('pay-catalog', req, 60, 600, 600)
+  const rl = await rateLimit('pay-catalog', req, 60, 600, 600)
   if (!rl.ok) return tooManyRequests(rl)
 
   // ممیزی ناهمسانی قیمت — پس از هر تغییر کلاس‌ها یک‌بار در هر پروسه اجرا می‌شود

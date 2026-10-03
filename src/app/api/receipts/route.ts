@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
   }
 
   // ۱۰ ارسال رسید در ۱۰ دقیقه برای هر کاربر — ضد سوءاستفاده
-  const rl = rateLimit('receipt-upload', req, 10, 600, 600)
+  const rl = await rateLimit('receipt-upload', req, 10, 600, 600)
   if (!rl.ok) return tooManyRequests(rl)
 
   let form: FormData

@@ -232,7 +232,7 @@ export function FaqAdminTab({ items, archived, token, onToast, onChanged }: FaqA
         onToast?.(a.networkError)
         return
       }
-      onToast?.(arch.restoreSuccess)
+      onToast?.(arch.restoreSuccessToast)
       onChanged?.()
     } catch {
       onToast?.(a.networkError)

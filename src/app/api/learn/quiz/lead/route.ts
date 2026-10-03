@@ -17,7 +17,7 @@ const leadSchema = z.object({
 
 export async function POST(req: NextRequest) {
   // ⛔️ ضداسپم: حداکثر ۱۰ درخواست در ۱۰ دقیقه برای هر IP
-  const rl = rateLimit('quiz-lead', req, 10, 10 * 60, 10 * 60)
+  const rl = await rateLimit('quiz-lead', req, 10, 10 * 60, 10 * 60)
   if (!rl.ok) return tooManyRequests(rl)
   const guard = guardResponse(req)
   if (guard) return guard

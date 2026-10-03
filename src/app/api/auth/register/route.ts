@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
   if (guard) return guard
 
   // ۶ ثبت‌نام در ۱۰ دقیقه برای هر IP
-  const rl = rateLimit('auth-register', req, 6, 600, 600)
+  const rl = await rateLimit('auth-register', req, 6, 600, 600)
   if (!rl.ok) return tooManyRequests(rl)
 
   let body: Record<string, unknown>

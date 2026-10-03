@@ -108,7 +108,7 @@ type ClassesCache = {
   failed: boolean
 }
 
-interface CourseClassRow {
+export interface CourseClassRow {
   id: string
   slug: string
   productId: string

@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
   if (guard) return guard
 
   // ۸ ساخت سفارش در ۱۰ دقیقه برای هر IP
-  const rl = rateLimit('pay-create', req, 8, 600, 600)
+  const rl = await rateLimit('pay-create', req, 8, 600, 600)
   if (!rl.ok) return tooManyRequests(rl)
 
   // حلقهٔ سبک انقضای سفارش‌های پرداخت‌نشده (بدون هیچ اسکنِ زنجیره)

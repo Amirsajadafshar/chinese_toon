@@ -16,12 +16,12 @@ import { approveManualPayment, isValidOrderRef, getOrderByRef } from '@/lib/paym
 export const dynamic = 'force-dynamic'
 
 export async function POST(req: NextRequest, ctx: { params: Promise<{ ref: string }> }) {
-  if (!isAuthorized(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!(await isAuthorized(req))) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const guard = guardResponse(req)
   if (guard) return guard
 
-  const rl = rateLimit('admin-approve', req, 60, 600, 300)
+  const rl = await rateLimit('admin-approve', req, 60, 600, 300)
   if (!rl.ok) return tooManyRequests(rl)
 
   const { ref } = await ctx.params

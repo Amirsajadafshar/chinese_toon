@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
   const guard = guardResponse(req)
   if (guard) return guard
 
-  const rl = rateLimit('auth-change-pw', req, 5, 600, 600)
+  const rl = await rateLimit('auth-change-pw', req, 5, 600, 600)
   if (!rl.ok) return tooManyRequests(rl)
 
   const user = await getUserFromRequest(req)

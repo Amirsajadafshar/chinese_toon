@@ -42,7 +42,7 @@ function bandFromPercent(pct: number): 'beginner' | 'elementary' | 'intermediate
 
 export async function POST(req: NextRequest) {
   // ⛔️ ضداسپم: حداکثر ۲۰ ثبت در ۱۰ دقیقه برای هر IP
-  const rl = rateLimit('quiz-submit', req, 20, 10 * 60, 10 * 60)
+  const rl = await rateLimit('quiz-submit', req, 20, 10 * 60, 10 * 60)
   if (!rl.ok) return tooManyRequests(rl)
   // 🛡️ گارد مبدأ + سقف حجم بدنه — هم‌خوان با بقیهٔ APIهای mutation
   const guard = guardResponse(req)

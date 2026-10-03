@@ -20,10 +20,10 @@ const settingsSchema = z.object({
 })
 
 export async function PUT(req: NextRequest) {
-  if (!isAuthorized(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!(await isAuthorized(req))) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const guard = guardResponse(req)
   if (guard) return guard
-  const rl = rateLimit('backup-settings', req, 20, 600, 300)
+  const rl = await rateLimit('backup-settings', req, 20, 600, 300)
   if (!rl.ok) return tooManyRequests(rl)
   try {
     const parsed = settingsSchema.safeParse(await req.json().catch(() => ({})))
@@ -47,7 +47,7 @@ export async function PUT(req: NextRequest) {
 }
 
 export async function GET(req: NextRequest) {
-  if (!isAuthorized(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!(await isAuthorized(req))) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const settings = await getBackupSettings()
   return NextResponse.json({ settings })
 }

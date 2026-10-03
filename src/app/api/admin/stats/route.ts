@@ -7,7 +7,7 @@ import { isAuthorized } from '@/lib/admin-auth'
 // ---------------------------------------------------------------------------
 
 export async function GET(req: NextRequest) {
-  if (!isAuthorized(req)) {
+  if (!(await isAuthorized(req))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   try {

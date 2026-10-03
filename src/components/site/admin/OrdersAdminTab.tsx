@@ -93,6 +93,7 @@ interface DetailData {
   }>
   events: Array<{ id: string; kind: string; orderRef: string | null; txHash: string | null; detail: string; createdAt: string }>
   expiresAt: string
+  nextSessionAt?: string | null
   addressIndex: number | null
   currency: string
 }

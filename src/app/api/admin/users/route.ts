@@ -22,7 +22,7 @@ export const dynamic = 'force-dynamic'
 const NEW_USER_DAYS = 7
 
 export async function GET(req: NextRequest) {
-  if (!isAuthorized(req)) {
+  if (!(await isAuthorized(req))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

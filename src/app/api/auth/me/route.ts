@@ -73,10 +73,10 @@ export async function GET(req: NextRequest) {
       orderBy: { createdAt: 'desc' },
       select: { preferredDays: true, preferredTimes: true },
     })
-    const hasPreferences =
+    const hasPreferences: boolean =
       !!registration &&
-      ((registration.preferredDays && registration.preferredDays !== '[]') ||
-        (registration.preferredTimes && registration.preferredTimes !== '[]'))
+      ((!!registration.preferredDays && registration.preferredDays !== '[]') ||
+        (!!registration.preferredTimes && registration.preferredTimes !== '[]'))
 
     // وضعیت ثبت‌نام هر سفارش + وضعیت کلی (پیشرفته‌ترین مرحلهٔ واقعی)
     const perOrder = orders.map((o) => {

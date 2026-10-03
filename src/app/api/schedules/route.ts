@@ -29,7 +29,7 @@ export const dynamic = 'force-dynamic'
 
 export async function GET(req: NextRequest) {
   // حالت ادمین — فیلترهای کامل
-  if (isAuthorized(req)) {
+  if (await isAuthorized(req)) {
     try {
       const url = new URL(req.url)
       const status = url.searchParams.get('status')
@@ -122,10 +122,10 @@ const proposeSchema = z.object({
 })
 
 export async function POST(req: NextRequest) {
-  if (!isAuthorized(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!(await isAuthorized(req))) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const guard = guardResponse(req)
   if (guard) return guard
-  const rl = rateLimit('admin-schedule-proposal', req, 60, 10 * 60, 5 * 60)
+  const rl = await rateLimit('admin-schedule-proposal', req, 60, 10 * 60, 5 * 60)
   if (!rl.ok) return tooManyRequests(rl)
 
   try {

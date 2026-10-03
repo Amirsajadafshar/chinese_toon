@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
   const guard = guardResponse(req)
   if (guard) return guard
 
-  const rl = rateLimit('post-view', req, 30, 600, 300)
+  const rl = await rateLimit('post-view', req, 30, 600, 300)
   if (!rl.ok) return tooManyRequests(rl)
 
   try {

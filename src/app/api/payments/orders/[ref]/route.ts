@@ -24,7 +24,7 @@ export const dynamic = 'force-dynamic'
 
 export async function GET(req: NextRequest, ctx: { params: Promise<{ ref: string }> }) {
   // ضد سوءاستفاده: ۱۲۰ بررسی وضعیت در دقیقه برای هر IP (حداقل ۱۰ برابر نیاز واقعی)
-  const rl = rateLimit('pay-status', req, 120, 60, 60)
+  const rl = await rateLimit('pay-status', req, 120, 60, 60)
   if (!rl.ok) return tooManyRequests(rl)
 
   const { ref } = await ctx.params
@@ -36,7 +36,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ ref: string
   // PII/رسیدی در پاسخ عمومی نیست و ref یکتا با آنتروپی بالا ساخته می‌شود.
   const target = await getOrderByRef(ref)
   if (target?.userId) {
-    const [viewer, admin] = await Promise.all([getUserFromRequest(req), Promise.resolve(isAuthorized(req))])
+    const [viewer, admin] = await Promise.all([getUserFromRequest(req), isAuthorized(req)])
     if (!admin && viewer?.id !== target.userId) {
       return NextResponse.json({ error: 'Order not found' }, { status: 404 })
     }
@@ -48,7 +48,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ ref: string
 }
 
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ ref: string }> }) {
-  if (!isAuthorized(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!(await isAuthorized(req))) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const { ref } = await ctx.params
 
   let body: { action?: unknown }

@@ -13,7 +13,7 @@ import { getTiersAsync, saveTiers, sanitizeTiers, DEFAULT_TIERS, type SessionTie
 export const dynamic = 'force-dynamic'
 
 export async function GET(req: NextRequest) {
-  if (!isAuthorized(req)) {
+  if (!(await isAuthorized(req))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   try {
@@ -27,12 +27,12 @@ export async function GET(req: NextRequest) {
 }
 
 export async function PUT(req: NextRequest) {
-  if (!isAuthorized(req)) {
+  if (!(await isAuthorized(req))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   const guard = guardResponse(req)
   if (guard) return guard
-  const rl = rateLimit('discounts-write', req, 30, 600, 300)
+  const rl = await rateLimit('discounts-write', req, 30, 600, 300)
   if (!rl.ok) return tooManyRequests(rl)
 
   try {

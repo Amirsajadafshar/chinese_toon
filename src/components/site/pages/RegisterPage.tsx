@@ -393,7 +393,7 @@ export function RegisterPage({ onToast }: RegisterPageProps) {
   const selectionKey = selectedClass ?? ''
   const [seenSelectionKey, setSeenSelectionKey] = useState('')
   // منبع همگام‌سازی نوع — «pending» یعنی کلاس در فایل نبود؛ منتظر کاتالوگ بمان
-  const [typeSync, setTypeSync] = useState<{ key: string; source: 'file' | 'catalog' }>({ key: '', source: 'file' })
+  const [typeSync, setTypeSync] = useState<{ key: string; source: 'file' | 'catalog' | 'pending' }>({ key: '', source: 'file' })
   if (selectionKey !== seenSelectionKey) {
     setSeenSelectionKey(selectionKey)
     if (selectionKey && submitted) {

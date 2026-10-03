@@ -15,7 +15,7 @@ import { logAdminAction } from '@/lib/audit'
 export const dynamic = 'force-dynamic'
 
 export async function GET(req: NextRequest) {
-  if (!isAuthorized(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!(await isAuthorized(req))) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   try {
     const [settings, list] = await Promise.all([getBackupSettings(), listBackups()])
     return NextResponse.json({ settings, ...list })
@@ -26,11 +26,11 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  if (!isAuthorized(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!(await isAuthorized(req))) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const guard = guardResponse(req)
   if (guard) return guard
   // حداکثر ۶ پشتیبان دستی در ۱۰ دقیقه
-  const rl = rateLimit('backup-create', req, 6, 600, 300)
+  const rl = await rateLimit('backup-create', req, 6, 600, 300)
   if (!rl.ok) return tooManyRequests(rl)
   try {
     const result = await createBackup('MANUAL')

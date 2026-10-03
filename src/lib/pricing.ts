@@ -43,7 +43,7 @@ export function sanitizeTiers(raw: unknown): SessionTier[] | null {
   for (const t of raw) {
     const min = Number((t as SessionTier)?.min)
     const percent = Number((t as SessionTier)?.percent)
-    const maxRaw = (t as SessionTier)?.max
+    const maxRaw = (t as SessionTier)?.max as number | string | null | undefined
     const max = maxRaw === null || maxRaw === undefined || maxRaw === '' ? null : Number(maxRaw)
     if (
       !Number.isInteger(min) || min < 1 ||

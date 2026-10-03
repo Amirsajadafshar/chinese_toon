@@ -54,7 +54,7 @@ function ruleErrorResponse(err: ScheduleRuleError): NextResponse {
 // ---------------------------------------------------------------------------
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  if (!isAuthorized(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!(await isAuthorized(req))) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   try {
     const { id } = await params
     const row = await db.classSchedule.findUnique({
@@ -72,7 +72,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     })
     // تاریخچهٔ زنجیرهٔ جابه‌جایی — از رکورد فعلی به عقب و جلو
     const chain: { id: string; status: string; startAt: Date; endAt: Date }[] = []
-    let cursor = row
+    let cursor: { id: string; status: string; startAt: Date; endAt: Date; supersededById: string | null } = row
     while (cursor.supersededById && chain.length < 20) {
       const prev = await db.classSchedule.findUnique({
         where: { id: cursor.supersededById },
@@ -116,16 +116,16 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (guard) return guard
 
   const { id } = await params
-  const admin = isAuthorized(req)
+  const admin = await isAuthorized(req)
 
   // مشتری واردشده؟ (ادمین لازم نیست لاگین مشتری داشته باشد)
-  let customer = null
+  let customer: Awaited<ReturnType<typeof getUserFromRequest>> = null
   if (!admin) {
     customer = await getUserFromRequest(req)
     if (!customer) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const rl = rateLimit(admin ? 'admin-schedule-patch' : 'customer-schedule-patch', req, admin ? 120 : 30, 10 * 60, 5 * 60)
+  const rl = await rateLimit(admin ? 'admin-schedule-patch' : 'customer-schedule-patch', req, admin ? 120 : 30, 10 * 60, 5 * 60)
   if (!rl.ok) return tooManyRequests(rl)
 
   try {

@@ -26,7 +26,7 @@ const putSchema = z.object({
 })
 
 export async function PUT(req: NextRequest) {
-  if (!isAuthorized(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!(await isAuthorized(req))) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const guard = guardResponse(req)
   if (guard) return guard
   try {

@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
   if (guard) return guard
 
   // ۱۰ تلاش ورود در ۱۰ دقیقه برای هر IP
-  const rl = rateLimit('auth-login', req, 10, 600, 600)
+  const rl = await rateLimit('auth-login', req, 10, 600, 600)
   if (!rl.ok) return tooManyRequests(rl)
 
   let body: Record<string, unknown>
@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
   // 🛡️ فاز ۳۶ — سقف دوم روی «همان ایمیل» مستقل از IP (کمبین IPC + account):
   // ۱۵ تلاش در ۱۰ دقیقه برای هر ایمیل؛ یک مهاجم با چرخش IP هم نمی‌تواند یک
   // حساب را بی‌پایان تست کند. پیام 429 عمومی است و وجود/عدم‌وجود حساب لو نمی‌رود.
-  const rlEmail = rateLimit(`auth-login-email:${email}`, req, 15, 600, 300)
+  const rlEmail = await rateLimit(`auth-login-email:${email}`, req, 15, 600, 300)
   if (!rlEmail.ok) return tooManyRequests(rlEmail)
 
   // ♻️ فاز ۶۳ — منطق ورود در یک تابع تا در صورت ناهم‌خوانی اسکیمای دیتابیس

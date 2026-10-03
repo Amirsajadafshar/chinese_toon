@@ -34,12 +34,12 @@ async function uniqueSlug(base: string): Promise<string> {
 }
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  if (!isAuthorized(req)) {
+  if (!(await isAuthorized(req))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   const guard = guardResponse(req)
   if (guard) return guard
-  const rl = rateLimit('admin-classes-write', req, 30, 600, 300)
+  const rl = await rateLimit('admin-classes-write', req, 30, 600, 300)
   if (!rl.ok) return tooManyRequests(rl)
 
   const { id } = await params

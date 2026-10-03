@@ -27,7 +27,7 @@ import {
 export const dynamic = 'force-dynamic'
 
 export async function GET(req: NextRequest) {
-  const admin = isAuthorized(req)
+  const admin = await isAuthorized(req)
   const s = await getBankCardSettings()
   if (admin) {
     return NextResponse.json({ settings: { ...s, ready: isBankCardReady(s) } })
@@ -48,14 +48,14 @@ export async function GET(req: NextRequest) {
 }
 
 export async function PUT(req: NextRequest) {
-  if (!isAuthorized(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!(await isAuthorized(req))) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   // هم‌مبدأ بودن + سقف حجم بدنه
   const guard = guardResponse(req)
   if (guard) return guard
 
   // ۳۰ ذخیره در ۱۰ دقیقه — ضد سوءاستفاده
-  const rl = rateLimit('payment-settings', req, 30, 600, 300)
+  const rl = await rateLimit('payment-settings', req, 30, 600, 300)
   if (!rl.ok) return tooManyRequests(rl)
 
   let body: Record<string, unknown>

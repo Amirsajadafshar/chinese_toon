@@ -34,7 +34,7 @@ function isUniqueViolation(e: unknown): boolean {
 //            sort (title|price|createdAt|updatedAt|status|sortOrder), dir (asc|desc), take
 // ---------------------------------------------------------------------------
 export async function GET(req: NextRequest) {
-  if (!isAuthorized(req)) {
+  if (!(await isAuthorized(req))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
@@ -103,13 +103,13 @@ export async function GET(req: NextRequest) {
 // POST — ایجاد کلاس جدید (اعتبارسنجی کامل + یکتایی slug/productId + لاگ ممیزی)
 // ---------------------------------------------------------------------------
 export async function POST(req: NextRequest) {
-  if (!isAuthorized(req)) {
+  if (!(await isAuthorized(req))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   const guard = guardResponse(req)
   if (guard) return guard
 
-  const rl = rateLimit('admin-classes-write', req, 30, 600, 300)
+  const rl = await rateLimit('admin-classes-write', req, 30, 600, 300)
   if (!rl.ok) return tooManyRequests(rl)
 
   let body: unknown

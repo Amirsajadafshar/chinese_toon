@@ -134,10 +134,30 @@ model FaqItem {
   updatedAt  DateTime  @updatedAt
   // 🗄️ حذف نرم (فاز ۵۵) — بایگانی با امکان بازگردانی؛ هیچ سؤالی پاک‌شدهٔ همیشگی نیست
   deletedAt  DateTime?
-  // ℹ️ فاز ۵۸ — رأی Like/Dislike (helpfulYes/No + جدول FaqVote) به درخواست مالک
-  // حذف شد؛ این مقادیر فقط توسط بازخورد FAQ استفاده می‌شدند و جایگزینی امن دارند.
+  // 👍👎 فاز ۶۴ — شمارنده‌های رأی مفیدبودن بازگردانده شدند (کد /api/faq/vote
+  // به آن‌ها تکیه دارد؛ حذف ناقص فاز ۵۸ باعث ۵۰۰ شدن هر رأی می‌شد). منبع حقیقت
+  // شمارنده فقط تراکنشِ رأی‌گیری است و پاسخ سرور همیشه از دیتابیس می‌آید.
+  helpfulYes Int       @default(0)
+  helpfulNo  Int       @default(0)
+  votes      FaqVote[]
 
   @@index([published, sortOrder])
+}
+
+// 👍👎 رأی «آیا این پاسخ مفید بود؟» (فاز ۵۵ — بازگردانی در فاز ۶۴)
+// هر بازدیدکننده (هش sha256(IP|UA)) حداکثر یک رأی به هر سؤال — یکتایی در
+// سطح دیتابیس ضد رأی تکراری است. فقط 'up' | 'down' ذخیره می‌شود.
+model FaqVote {
+  id        String   @id @default(cuid())
+  faqId     String
+  faq       FaqItem  @relation(fields: [faqId], references: [id], onDelete: Cascade)
+  visitorId String
+  vote      String
+  createdAt DateTime @default(now())
+
+  @@unique([faqId, visitorId])
+  @@index([visitorId])
+  @@index([faqId])
 }
 
 // واژه‌های فلش‌کارت صفحهٔ Learn — از پنل ادمین اضافه/ویرایش/حذف می‌شود
@@ -657,5 +677,50 @@ model AuditLog {
 
   @@index([createdAt])
   @@index([action, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// 🔐 نشست‌های ورود پنل مدیریت — DB-backed (فاز ۶۴)
+// نسخه‌های قبلی سشن ادمین را در حافظهٔ پروسه (Map روی globalThis) نگه می‌داشتند
+// که فقط در استقرار تک‌پروسه‌ای درست کار می‌کند؛ روی Serverless (Vercel) هر
+// درخواست ممکن است روی نمونهٔ دیگری اجرا شود و سشن «گم» می‌شد (الگوی ۴۰۱
+// تصادفی بعد از لاگین موفق). از این پس دیتابیس تنها منبع حقیقت است و سشن بین
+// همهٔ نمونه‌ها و در برابر ری‌استارت معتبر می‌ماند.
+// امنیت: فقط sha256 توکن ذخیره می‌شود (توکن خام هرگز)؛ انقضای لغزان ۲ساعتهٔ
+// بی‌کاری با lastSeenAt و سقف مطلق ۸ساعته با expiresAt اعمال می‌شود.
+// ---------------------------------------------------------------------------
+model AdminSession {
+  id         String   @id @default(cuid())
+  tokenHash  String   @unique // sha256(token) — خود توکن هرگز ذخیره نمی‌شود
+  username   String // نام ادمینِ صاحب سشن برای Audit Log
+  issuedAt   DateTime @default(now())
+  lastSeenAt DateTime @default(now()) // با هر درخواست مجاز تمدید می‌شود (لغزان)
+  expiresAt  DateTime // سقف مطلق ۸ ساعت پس از ورود
+
+  @@index([lastSeenAt])
+  @@index([expiresAt])
+}
+
+// ---------------------------------------------------------------------------
+// 🚦 محدودساز نرخ درخواست — DB-backed (فاز ۶۴)
+// نسخهٔ قبلی شمارنده‌ها را در حافظهٔ هر نمونه نگه می‌داشت؛ روی Serverless هر
+// نمونه شمارش خودش را داشت و سقف تلاش عملاً دور زدنی می‌شد. با این جدول‌ها
+// شمارش بین همهٔ نمونه‌ها مشترک است.
+//   RateEvent → هر درخواستِ عبورکرده یک ردیف؛ سقف = تعداد ردیف در پنجرهٔ زمانی
+//   RateBlock → قفل کامل یک bucket تا زمان until (ضد brute-force ورود ادمین)
+// ---------------------------------------------------------------------------
+model RateEvent {
+  id        String   @id @default(cuid())
+  bucketKey String // «name:ip» — اسکوپ محدودساز + IP کلاینت
+  createdAt DateTime @default(now())
+
+  @@index([bucketKey, createdAt])
+}
+
+model RateBlock {
+  bucketKey String   @id // «name:ip»
+  until     DateTime // پس از این زمان قفل برداشته می‌شود
+
+  @@index([until])
 }
 

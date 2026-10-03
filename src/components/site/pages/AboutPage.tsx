@@ -17,7 +17,7 @@ import {
   ScrollText,
 } from 'lucide-react'
 import { InstagramIcon, TelegramIcon, WeChatIcon } from '../brand-icons'
-import { TeacherProfileModal, TeacherSample } from '../TeacherProfileModal'
+import { TeacherProfileModal, type TeacherSample, type TeacherProfile } from '../TeacherProfileModal'
 import { CurveDivider } from '../CurveDivider'
 import { Leaflet } from '../ToonBranch'
 import { siteContent, PageKey } from '@/content/site-content'
@@ -149,7 +149,7 @@ export function AboutPage({ onNavigate }: AboutPageProps) {
             .split('\n')
             .map((s) => s.trim())
             .filter(Boolean),
-          samples: t.samples,
+          samples: parseSamples(t.samples),
         }))
   return (
     <div id="page-about">

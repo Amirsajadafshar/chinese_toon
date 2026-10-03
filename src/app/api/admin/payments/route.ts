@@ -20,10 +20,10 @@ export const dynamic = 'force-dynamic'
 type StatusFilter = 'all' | 'unpaid' | 'receipt_submitted' | 'approved' | 'rejected' | 'cancelled' | 'expired' | 'legacy'
 
 export async function GET(req: NextRequest) {
-  if (!isAuthorized(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!(await isAuthorized(req))) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   // ۱۲۰ درخواست در دقیقه — پنل ادمین
-  const rl = rateLimit('admin-payments', req, 120, 60, 60)
+  const rl = await rateLimit('admin-payments', req, 120, 60, 60)
   if (!rl.ok) return tooManyRequests(rl)
 
   const url = new URL(req.url)

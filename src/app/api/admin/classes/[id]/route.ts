@@ -41,7 +41,7 @@ async function findClass(id: string) {
 
 // GET — جزئیات کامل برای فرم ویرایش
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  if (!isAuthorized(req)) {
+  if (!(await isAuthorized(req))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   const { id } = await params
@@ -57,12 +57,12 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
 // PUT — ویرایش کامل
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  if (!isAuthorized(req)) {
+  if (!(await isAuthorized(req))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   const guard = guardResponse(req)
   if (guard) return guard
-  const rl = rateLimit('admin-classes-write', req, 60, 600, 300)
+  const rl = await rateLimit('admin-classes-write', req, 60, 600, 300)
   if (!rl.ok) return tooManyRequests(rl)
 
   const { id } = await params
@@ -164,12 +164,12 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
 // PATCH — تغییر سریع وضعیت
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  if (!isAuthorized(req)) {
+  if (!(await isAuthorized(req))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   const guard = guardResponse(req)
   if (guard) return guard
-  const rl = rateLimit('admin-classes-write', req, 60, 600, 300)
+  const rl = await rateLimit('admin-classes-write', req, 60, 600, 300)
   if (!rl.ok) return tooManyRequests(rl)
 
   const { id } = await params
@@ -205,12 +205,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
 // DELETE — حذف امن (با گارد ارجاع سفارش/ثبت‌نام)
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  if (!isAuthorized(req)) {
+  if (!(await isAuthorized(req))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   const guard = guardResponse(req)
   if (guard) return guard
-  const rl = rateLimit('admin-classes-write', req, 30, 600, 300)
+  const rl = await rateLimit('admin-classes-write', req, 30, 600, 300)
   if (!rl.ok) return tooManyRequests(rl)
 
   const { id } = await params

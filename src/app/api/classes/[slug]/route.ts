@@ -19,7 +19,7 @@ export async function GET(
   const guard = guardResponse(req)
   if (guard) return guard
 
-  const rl = rateLimit('classes-one', req, 60, 600, 600)
+  const rl = await rateLimit('classes-one', req, 60, 600, 600)
   if (!rl.ok) return tooManyRequests(rl)
 
   const { slug } = await params

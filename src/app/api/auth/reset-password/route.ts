@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
   if (guard) return guard
 
   // ۱۰ تلاش در ۱۰ دقیقه برای هر IP
-  const rl = rateLimit('auth-reset', req, 10, 600, 600)
+  const rl = await rateLimit('auth-reset', req, 10, 600, 600)
   if (!rl.ok) return tooManyRequests(rl)
 
   let body: Record<string, unknown>

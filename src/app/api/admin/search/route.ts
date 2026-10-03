@@ -19,8 +19,8 @@ export const dynamic = 'force-dynamic'
 const TAKE_PER_TYPE = 5
 
 export async function GET(req: NextRequest) {
-  if (!isAuthorized(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  const rl = rateLimit('admin-search', req, 90, 600, 300)
+  if (!(await isAuthorized(req))) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const rl = await rateLimit('admin-search', req, 90, 600, 300)
   if (!rl.ok) return tooManyRequests(rl)
 
   const q = (new URL(req.url).searchParams.get('q') ?? '').trim().slice(0, 60)

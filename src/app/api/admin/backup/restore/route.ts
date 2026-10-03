@@ -23,10 +23,10 @@ const restoreSchema = z.object({
 })
 
 export async function POST(req: NextRequest) {
-  if (!isAuthorized(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!(await isAuthorized(req))) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const guard = guardResponse(req)
   if (guard) return guard
-  const rl = rateLimit('backup-restore', req, 3, 600, 600)
+  const rl = await rateLimit('backup-restore', req, 3, 600, 600)
   if (!rl.ok) return tooManyRequests(rl)
   try {
     const parsed = restoreSchema.safeParse(await req.json().catch(() => ({})))

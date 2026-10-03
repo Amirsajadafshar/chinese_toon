@@ -33,7 +33,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
   }
 
   // 🔒 ادمین یا مالکِ سشن — بقیهٔ جهان ۴۰۴ می‌بینند
-  const admin = isAuthorized(req)
+  const admin = await isAuthorized(req)
   if (!admin) {
     const viewer = await getUserFromRequest(req)
     if (!viewer || !order.userId || viewer.id !== order.userId) {

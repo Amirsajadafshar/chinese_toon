@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
   if (guard) return guard
 
   // ۵ درخواست در ۱۰ دقیقه برای هر IP
-  const rl = rateLimit('auth-forgot', req, 5, 600, 600)
+  const rl = await rateLimit('auth-forgot', req, 5, 600, 600)
   if (!rl.ok) return tooManyRequests(rl)
 
   let body: Record<string, unknown>
@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
   }
 
   // ۴ درخواست در ۳۰ دقیقه برای هر ایمیل — مستقل از IP
-  const rlEmail = rateLimit(`auth-forgot-email:${email}`, req, 4, 1800, 1800)
+  const rlEmail = await rateLimit(`auth-forgot-email:${email}`, req, 4, 1800, 1800)
   if (!rlEmail.ok) return tooManyRequests(rlEmail)
 
   // پاسخ عمومی — مستقل از وجود/عدم‌وجود حساب

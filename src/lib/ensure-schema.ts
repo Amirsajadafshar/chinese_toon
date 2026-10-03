@@ -125,7 +125,17 @@ const CREATE_TABLES: readonly string[] = [
     "published" BOOLEAN NOT NULL DEFAULT 1,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" DATETIME NOT NULL,
-    "deletedAt" DATETIME
+    "deletedAt" DATETIME,
+    "helpfulYes" INTEGER NOT NULL DEFAULT 0,
+    "helpfulNo" INTEGER NOT NULL DEFAULT 0
+  )`,
+  `CREATE TABLE IF NOT EXISTS "FaqVote" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "faqId" TEXT NOT NULL,
+    "visitorId" TEXT NOT NULL,
+    "vote" TEXT NOT NULL,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "FaqVote_faqId_fkey" FOREIGN KEY ("faqId") REFERENCES "FaqItem" ("id") ON DELETE CASCADE ON UPDATE CASCADE
   )`,
   `CREATE TABLE IF NOT EXISTS "LearnCard" (
     "id" TEXT NOT NULL PRIMARY KEY,
@@ -422,6 +432,23 @@ const CREATE_TABLES: readonly string[] = [
     "meta" TEXT NOT NULL DEFAULT '',
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
   )`,
+  `CREATE TABLE IF NOT EXISTS "AdminSession" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "tokenHash" TEXT NOT NULL,
+    "username" TEXT NOT NULL,
+    "issuedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "lastSeenAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "expiresAt" DATETIME NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS "RateEvent" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "bucketKey" TEXT NOT NULL,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`,
+  `CREATE TABLE IF NOT EXISTS "RateBlock" (
+    "bucketKey" TEXT NOT NULL PRIMARY KEY,
+    "until" DATETIME NOT NULL
+  )`,
 ]
 
 // ایندکس‌ها — نام‌ها دقیقاً مطابق قرارداد Prisma تا با db push هم‌خوان بمانند
@@ -433,6 +460,9 @@ const CREATE_INDEXES: readonly string[] = [
   `CREATE UNIQUE INDEX IF NOT EXISTS "ReviewLike_testimonialId_visitorId_key" ON "ReviewLike"("testimonialId", "visitorId")`,
   `CREATE INDEX IF NOT EXISTS "ReviewLike_visitorId_idx" ON "ReviewLike"("visitorId")`,
   `CREATE INDEX IF NOT EXISTS "FaqItem_published_sortOrder_idx" ON "FaqItem"("published", "sortOrder")`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS "FaqVote_faqId_visitorId_key" ON "FaqVote"("faqId", "visitorId")`,
+  `CREATE INDEX IF NOT EXISTS "FaqVote_visitorId_idx" ON "FaqVote"("visitorId")`,
+  `CREATE INDEX IF NOT EXISTS "FaqVote_faqId_idx" ON "FaqVote"("faqId")`,
   `CREATE UNIQUE INDEX IF NOT EXISTS "Lesson_slug_key" ON "Lesson"("slug")`,
   `CREATE UNIQUE INDEX IF NOT EXISTS "User_email_key" ON "User"("email")`,
   `CREATE UNIQUE INDEX IF NOT EXISTS "User_uniqueCode_key" ON "User"("uniqueCode")`,
@@ -476,6 +506,11 @@ const CREATE_INDEXES: readonly string[] = [
   `CREATE INDEX IF NOT EXISTS "ErrorLog_category_createdAt_idx" ON "ErrorLog"("category", "createdAt")`,
   `CREATE INDEX IF NOT EXISTS "AuditLog_createdAt_idx" ON "AuditLog"("createdAt")`,
   `CREATE INDEX IF NOT EXISTS "AuditLog_action_createdAt_idx" ON "AuditLog"("action", "createdAt")`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS "AdminSession_tokenHash_key" ON "AdminSession"("tokenHash")`,
+  `CREATE INDEX IF NOT EXISTS "AdminSession_lastSeenAt_idx" ON "AdminSession"("lastSeenAt")`,
+  `CREATE INDEX IF NOT EXISTS "AdminSession_expiresAt_idx" ON "AdminSession"("expiresAt")`,
+  `CREATE INDEX IF NOT EXISTS "RateEvent_bucketKey_createdAt_idx" ON "RateEvent"("bucketKey", "createdAt")`,
+  `CREATE INDEX IF NOT EXISTS "RateBlock_until_idx" ON "RateBlock"("until")`,
 ]
 
 // ---------------------------------------------------------------------------
@@ -612,7 +647,11 @@ const ALTER_COLUMNS: Readonly<Record<string, readonly string[]>> = {
     'ALTER TABLE "Testimonial" ADD COLUMN "likeCount" INTEGER NOT NULL DEFAULT 0',
     'ALTER TABLE "Testimonial" ADD COLUMN "deletedAt" DATETIME',
   ],
-  FaqItem: ['ALTER TABLE "FaqItem" ADD COLUMN "deletedAt" DATETIME'],
+  FaqItem: [
+    'ALTER TABLE "FaqItem" ADD COLUMN "deletedAt" DATETIME',
+    'ALTER TABLE "FaqItem" ADD COLUMN "helpfulYes" INTEGER NOT NULL DEFAULT 0',
+    'ALTER TABLE "FaqItem" ADD COLUMN "helpfulNo" INTEGER NOT NULL DEFAULT 0',
+  ],
   Teacher: [
     'ALTER TABLE "Teacher" ADD COLUMN "resume" TEXT NOT NULL DEFAULT \'\'',
     'ALTER TABLE "Teacher" ADD COLUMN "experienceYears" INTEGER NOT NULL DEFAULT 0',

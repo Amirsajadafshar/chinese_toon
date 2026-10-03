@@ -1,47 +1,43 @@
 // ---------------------------------------------------------------------------
-// 🚦 محدودساز نرخ درخواست (Rate Limit) — حافظهٔ محلی، بدون وابستگی بیرونی
+// 🚦 محدودساز نرخ درخواست (Rate Limit) — DB-backed (فاز ۶۴)
 // برای جلوگیری از brute-force ورود مدیر و اسپم فرم‌های عمومی.
 // پنجرهٔ لغزان: اگر درخواست‌های یک IP از سقف عبور کند تا پایان پنجره بلاک است.
-// نکته: چون در حافظه است، با ری‌استارت سرور پاک می‌شود (برای این مقیاس کافی است).
+// نکته: نسخهٔ قبلی شمارنده‌ها را در حافظهٔ پروسه نگه می‌داشت که فقط در استقرار
+// تک‌پروسه‌ای معنا داشت؛ روی Serverless (Vercel) هر نمونه شمارش مستقل می‌گرفت
+// و سقف تلاش عملاً دور زدنی بود. اکنون شمارش در جدول‌های RateEvent و RateBlock
+// بین همهٔ نمونه‌ها مشترک است.
+// سیاست شکست: خطای دیتابیس = fail-open (فقط console.error) تا یک لغزش موقت DB
+// کل مسیرهای عمومی را از کار نیندازد؛ این لایه دفاعی تکمیلی است، نه قلب سرویس.
 // ---------------------------------------------------------------------------
 
-interface Bucket {
-  hits: number[] // timestamp هر درخواست موفقِ عبور (میلی‌ثانیه)
-  blockedUntil: number // اگر > now یعنی در حالت قفل است
-}
+import { db } from '@/lib/db'
 
-// ⚠️ روی globalThis نگه داشته می‌شود تا در حالت توسعه همهٔ مسیرها یک حافظهٔ مشترک داشته باشند
-const globalStore = globalThis as unknown as {
-  __ctRateBuckets?: Map<string, Bucket>
-}
-const buckets: Map<string, Bucket> = globalStore.__ctRateBuckets ?? new Map()
-globalStore.__ctRateBuckets = buckets
-
-// هر از گاهی سطل‌های کهنه پاک می‌شوند تا حافظه رشد نکند
-// (پنجرهٔ پاک‌سازی: هر ۵ دقیقه؛ سطل‌های بیش از یک ساعت غیرفعال حذف می‌شوند)
+// هر از گاهی ردیف‌های کهنه پاک می‌شوند تا جدول رشد نکند
+// (پنجرهٔ پاک‌سازی: هر ۵ دقیقه؛ ردیف‌های بیش از یک ساعت قبل حذف می‌شوند —
+// بزرگ‌ترین پنجرهٔ استفاده‌شده در call-siteها ۳۰ دقیقه است، پس یک ساعت امن است.
+// هر نمونه مستقل و throttled پاک‌سازی می‌کند؛ deleteMany خودش idempotent است.)
 const CLEANUP_INTERVAL = 5 * 60 * 1000
 let lastCleanup = Date.now()
 
-function cleanup(now: number) {
+function cleanup(now: number): void {
   if (now - lastCleanup < CLEANUP_INTERVAL) return
   lastCleanup = now
-  for (const [key, bucket] of buckets) {
-    if (bucket.blockedUntil < now && (bucket.hits.length === 0 || bucket.hits[bucket.hits.length - 1] < now - 60 * 60 * 1000)) {
-      buckets.delete(key)
-    }
-  }
+  const cutoff = new Date(now - 60 * 60 * 1000)
+  void db.rateEvent.deleteMany({ where: { createdAt: { lt: cutoff } } }).catch(() => {})
+  void db.rateBlock.deleteMany({ where: { until: { lt: cutoff } } }).catch(() => {})
 }
 
 /**
  * IP تقریبی کلاینت — در محیط پراکسی از هدر x-forwarded-for
  *
- * 🛡️ مدل اعتماد (سخت‌سازی امنیتی): «آخرین» عضو X-Forwarded-For استفاده می‌شود،
+ * 🛡️ مدل اعتماد (سخت‌سازی امنیتی): «آخرین» عضو X-Forwarded-For استفاده می‌شود,
  * نه اولی. آخرین عضو را نزدیک‌ترین پراکسیِ قابل‌اعتماد به سرور اضافه می‌کند و
  * کلاینت نمی‌تواند آن را دست‌کاری کند؛ عضو اول در زنجیره‌های چندپراکسی تحت کنترل
- * مهاجم است. در این استقرار Caddy مقدار XFF را با remote_host واقعی «جایگزین»
- * می‌کند (Caddyfile: header_up X-Forwarded-For {remote_host})، پس تک‌عضوی است —
+ * مهاجم است. در استقرار Caddy مقدار XFF با remote_host واقعی «جایگزین» می‌شود
+ * (Caddyfile: header_up X-Forwarded-For {remote_host})، پس تک‌عضوی است —
  * اما اگر روزی زنجیره عوض شد/پراکسی به‌جای جایگزینی الحاق کرد، «آخرین» همچنان
  * مقدار درست است و جعل هدرِ کلاینت هیچ‌وقت سطلِ rate-limit را دور نمی‌زند.
+ * روی Vercel نیز Vercel خودش XFF را از لبه تنظیم می‌کند و آخرین عضو معتبر است.
  */
 export function clientIp(req: Request): string {
   const fwd = req.headers.get('x-forwarded-for')
@@ -60,42 +56,55 @@ export interface RateResult {
 }
 
 /**
- * بررسی/ثبت یک درخواست در سطلِ name برای این IP.
+ * بررسی/ثبت یک درخواست در سطلِ name برای این IP — async؛ حتماً await شود.
  * limit: سقف درخواست در windowSec ثانیه.
  * lockoutSec: در صورت عبور از سقف، چقدر کامل بلاک بماند.
  */
-export function rateLimit(
+export async function rateLimit(
   name: string,
   req: Request,
   limit: number,
   windowSec: number,
   lockoutSec = windowSec
-): RateResult {
+): Promise<RateResult> {
   const now = Date.now()
   cleanup(now)
   const key = `${name}:${clientIp(req)}`
   const windowMs = windowSec * 1000
-  let bucket = buckets.get(key)
-  if (!bucket) {
-    bucket = { hits: [], blockedUntil: 0 }
-    buckets.set(key, bucket)
+
+  try {
+    // در حالت قفل؟
+    const block = await db.rateBlock.findUnique({ where: { bucketKey: key } })
+    if (block && block.until.getTime() > now) {
+      return {
+        ok: false,
+        retryAfter: Math.ceil((block.until.getTime() - now) / 1000),
+        remaining: 0,
+      }
+    }
+
+    // تعداد درخواست‌های داخل پنجرهٔ لغزان
+    const hits = await db.rateEvent.count({
+      where: { bucketKey: key, createdAt: { gt: new Date(now - windowMs) } },
+    })
+
+    if (hits >= limit) {
+      const until = new Date(now + lockoutSec * 1000)
+      await db.rateBlock.upsert({
+        where: { bucketKey: key },
+        update: { until },
+        create: { bucketKey: key, until },
+      })
+      return { ok: false, retryAfter: lockoutSec, remaining: 0 }
+    }
+
+    await db.rateEvent.create({ data: { bucketKey: key } })
+    return { ok: true, retryAfter: 0, remaining: limit - hits - 1 }
+  } catch (e) {
+    // fail-open: دیتابیس در دسترس نیست → اجازهٔ عبور؛ فقط در لاگ
+    console.error('[rate-limit] db unavailable — fail-open:', e instanceof Error ? e.message : e)
+    return { ok: true, retryAfter: 0, remaining: limit }
   }
-
-  // در حالت قفل؟
-  if (bucket.blockedUntil > now) {
-    return { ok: false, retryAfter: Math.ceil((bucket.blockedUntil - now) / 1000), remaining: 0 }
-  }
-
-  // پاک‌سازی درخواست‌های خارج از پنجره
-  bucket.hits = bucket.hits.filter((t) => now - t < windowMs)
-
-  if (bucket.hits.length >= limit) {
-    bucket.blockedUntil = now + lockoutSec * 1000
-    return { ok: false, retryAfter: lockoutSec, remaining: 0 }
-  }
-
-  bucket.hits.push(now)
-  return { ok: true, retryAfter: 0, remaining: limit - bucket.hits.length }
 }
 
 /** پاسخ استاندارد 429 با هدر Retry-After */

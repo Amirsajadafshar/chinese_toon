@@ -92,7 +92,7 @@ interface Registration {
   age: number | null
   level: string
   classType: string
-  classTitle?: string | null
+  classTitle: string | null
   schedule: string | null
   goal: string | null
   message: string | null
@@ -4638,7 +4638,7 @@ export function AdminPage({ onToast }: { onToast?: (m: string) => void }) {
               )}
 
               {/* 🗓️ Scheduling — برنامهٔ واقعی جلسات (فاز ۴۸) */}
-              {tab === 'scheduling' && <SchedulingAdminTab token={token!} onToast={onToast} />}
+              {tab === 'scheduling' && <SchedulingAdminTab token={token!} onToast={onToast ?? (() => {})} />}
 
               {/* 🎟️ Discounts — کدهای تخفیف + پله‌های خودکار بسته (فاز ۴۷) */}
               {tab === 'discounts' && (

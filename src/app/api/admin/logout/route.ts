@@ -5,6 +5,6 @@ import { revokeAdminSession } from '@/lib/admin-auth'
 // (حتی اگر توکن کپی شده باشد، دیگر قبول نیست)
 export async function POST(req: NextRequest) {
   const token = req.headers.get('x-admin-key')
-  revokeAdminSession(token)
+  await revokeAdminSession(token)
   return NextResponse.json({ ok: true })
 }

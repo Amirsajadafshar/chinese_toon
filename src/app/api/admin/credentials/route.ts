@@ -11,7 +11,7 @@ import { logAdminAction } from '@/lib/audit'
 // ---------------------------------------------------------------------------
 
 export async function GET(req: NextRequest) {
-  if (!isAuthorized(req)) {
+  if (!(await isAuthorized(req))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   return NextResponse.json({
@@ -21,12 +21,12 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  if (!isAuthorized(req)) {
+  if (!(await isAuthorized(req))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   // ⛔️ سقف تلاش — جلوگیری از تست رمزهای فعلی
-  const rl = rateLimit('admin-cred', req, 5, 10 * 60, 600)
+  const rl = await rateLimit('admin-cred', req, 5, 10 * 60, 600)
   if (!rl.ok) return tooManyRequests(rl)
 
   try {
@@ -72,7 +72,7 @@ export async function POST(req: NextRequest) {
     await setAdminCredentials(finalUsername, finalPassword)
 
     // 🔒 همهٔ سشن‌ها (از جمله سشن فعلی) باطل می‌شوند — ورود دوباره با اعتبارنامهٔ جدید
-    revokeAllSessions()
+    await revokeAllSessions()
 
     // 🧾 فاز ۵۳ — Audit Log: تغییر اعتبارنامهٔ پنل (بند ۱۴) — ⛔ هرگز رمز/هش در meta
     logAdminAction({ actor: getAdminActor(req), action: 'credentials.update', targetType: 'settings', targetId: finalUsername })

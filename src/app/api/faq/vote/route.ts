@@ -45,7 +45,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const rl = rateLimit('faq-vote', req, 20, 600, 300)
+  const rl = await rateLimit('faq-vote', req, 20, 600, 300)
   if (!rl.ok) return tooManyRequests(rl)
   const guard = guardResponse(req)
   if (guard) return guard

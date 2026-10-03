@@ -11,8 +11,8 @@ import { rateLimit, tooManyRequests } from '@/lib/rate-limit'
 export const dynamic = 'force-dynamic'
 
 export async function GET(req: NextRequest) {
-  if (!isAuthorized(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  const rl = rateLimit('admin-audit', req, 60, 600, 300)
+  if (!(await isAuthorized(req))) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const rl = await rateLimit('admin-audit', req, 60, 600, 300)
   if (!rl.ok) return tooManyRequests(rl)
 
   try {

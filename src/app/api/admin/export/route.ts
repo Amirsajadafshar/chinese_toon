@@ -28,8 +28,8 @@ type ExportType = 'users' | 'orders' | 'payments' | 'classes' | 'schedules' | 'd
 const VALID_TYPES: ExportType[] = ['users', 'orders', 'payments', 'classes', 'schedules', 'discounts', 'enrollments']
 
 export async function GET(req: NextRequest) {
-  if (!isAuthorized(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  const rl = rateLimit('admin-export', req, 12, 600, 300)
+  if (!(await isAuthorized(req))) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const rl = await rateLimit('admin-export', req, 12, 600, 300)
   if (!rl.ok) return tooManyRequests(rl)
 
   const url = new URL(req.url)

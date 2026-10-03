@@ -26,10 +26,10 @@ export const dynamic = 'force-dynamic'
 const SCAN_CAP = 2000
 
 export async function GET(req: NextRequest) {
-  if (!isAuthorized(req)) {
+  if (!(await isAuthorized(req))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
-  const rl = rateLimit('admin-orders', req, 120, 60, 60)
+  const rl = await rateLimit('admin-orders', req, 120, 60, 60)
   if (!rl.ok) return tooManyRequests(rl)
 
   try {

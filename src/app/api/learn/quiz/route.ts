@@ -24,7 +24,7 @@ const quizSchema = z.object({
 
 export async function GET(req: NextRequest) {
   try {
-    const admin = isAuthorized(req)
+    const admin = await isAuthorized(req)
     const questions = await db.quizQuestion.findMany({
       where: admin ? {} : { published: true },
       orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
@@ -46,7 +46,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  if (!isAuthorized(req)) {
+  if (!(await isAuthorized(req))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   try {
@@ -73,7 +73,7 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
-  if (!isAuthorized(req)) {
+  if (!(await isAuthorized(req))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   try {
@@ -111,7 +111,7 @@ export async function PATCH(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  if (!isAuthorized(req)) {
+  if (!(await isAuthorized(req))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   try {

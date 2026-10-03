@@ -21,12 +21,12 @@ function isNotFound(e: unknown): boolean {
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  if (!isAuthorized(req)) {
+  if (!(await isAuthorized(req))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   const guard = guardResponse(req)
   if (guard) return guard
-  const rl = rateLimit('discounts-write', req, 30, 600, 300)
+  const rl = await rateLimit('discounts-write', req, 30, 600, 300)
   if (!rl.ok) return tooManyRequests(rl)
 
   const { id } = await params
@@ -119,12 +119,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 }
 
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  if (!isAuthorized(req)) {
+  if (!(await isAuthorized(req))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   const guard = guardResponse(req)
   if (guard) return guard
-  const rl = rateLimit('discounts-write', req, 30, 600, 300)
+  const rl = await rateLimit('discounts-write', req, 30, 600, 300)
   if (!rl.ok) return tooManyRequests(rl)
 
   try {

@@ -460,8 +460,8 @@ export function AccountPage({ onNavigate, onToast }: AccountPageProps) {
                             onChange={setReg('password')}
                             className={`${inputCls} pr-12`}
                             placeholder={c.passwordPlaceholder}
-                            aria-describedby={regErrors.password ? 'acc-err-password' : 'acc-password-hint'}
                             {...errProps('password')}
+                            aria-describedby={regErrors.password ? 'acc-err-password' : 'acc-password-hint'}
                           />
                           <PasswordToggle
                             shown={showRegPw}

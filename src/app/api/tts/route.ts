@@ -32,7 +32,7 @@ function cachePut(key: string, buf: Buffer) {
 
 export async function POST(req: NextRequest) {
   // ⛔️ سقف نرخ — این مسیر پرهزینه است (مدل صوتی)
-  const rl = rateLimit('tts', req, 30, 10 * 60, 300)
+  const rl = await rateLimit('tts', req, 30, 10 * 60, 300)
   if (!rl.ok) return tooManyRequests(rl)
 
   try {

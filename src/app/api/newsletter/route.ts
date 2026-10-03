@@ -10,7 +10,7 @@ const newsletterSchema = z.object({
 
 export async function POST(req: NextRequest) {
   // ⛔️ ضداسپم: حداکثر ۶ ارسال در ۱۰ دقیقه برای هر IP
-  const rl = rateLimit('newsletter', req, 6, 10 * 60, 10 * 60)
+  const rl = await rateLimit('newsletter', req, 6, 10 * 60, 10 * 60)
   if (!rl.ok) return tooManyRequests(rl)
 
 
@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
 
 // خواندن مشترکان خبرنامه (فقط با توکن مدیریت — برای پنل #/admin)
 export async function GET(req: NextRequest) {
-  if (!isAuthorized(req)) {
+  if (!(await isAuthorized(req))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   try {

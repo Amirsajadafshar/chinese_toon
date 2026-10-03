@@ -15,9 +15,9 @@ import { getOrderByRef, isValidOrderRef } from '@/lib/payments/service'
 export const dynamic = 'force-dynamic'
 
 export async function GET(req: NextRequest, ctx: { params: Promise<{ ref: string }> }) {
-  if (!isAuthorized(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!(await isAuthorized(req))) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const rl = rateLimit('admin-payment-detail', req, 120, 60, 60)
+  const rl = await rateLimit('admin-payment-detail', req, 120, 60, 60)
   if (!rl.ok) return tooManyRequests(rl)
 
   const { ref } = await ctx.params

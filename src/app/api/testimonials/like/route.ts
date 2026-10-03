@@ -34,7 +34,7 @@ function isNotFound(e: unknown): boolean {
 }
 
 export async function POST(req: NextRequest) {
-  const rl = rateLimit('review-like', req, 30, 600, 300)
+  const rl = await rateLimit('review-like', req, 30, 600, 300)
   if (!rl.ok) return tooManyRequests(rl)
   // 🛡️ گارد مبدأ + سقف حجم بدنه — هم‌خوان با بقیهٔ APIهای mutation (فاز ۵۵)
   const guard = guardResponse(req)

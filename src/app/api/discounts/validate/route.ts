@@ -23,7 +23,7 @@ const schema = z.object({
 })
 
 export async function POST(req: NextRequest) {
-  const rl = rateLimit('discount-validate', req, 30, 600, 300)
+  const rl = await rateLimit('discount-validate', req, 30, 600, 300)
   if (!rl.ok) return tooManyRequests(rl)
 
   try {

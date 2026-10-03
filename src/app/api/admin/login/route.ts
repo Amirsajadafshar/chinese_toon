@@ -14,7 +14,7 @@ import { logAppError } from '@/lib/error-log'
 
 export async function POST(req: NextRequest) {
   // ⛔️ اول از همه: سقف تلاش
-  const rl = rateLimit('admin-login', req, 5, 10 * 60, 10 * 60)
+  const rl = await rateLimit('admin-login', req, 5, 10 * 60, 10 * 60)
   if (!rl.ok) {
     console.warn(`[admin-login] rate limited — IP blocked for ${rl.retryAfter}s`)
     return tooManyRequests(rl)
@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 🧾 فاز ۵۳ — نام کاربری در سشن نگه داشته می‌شود تا Audit Log فعلِ ادمین را با هویت ثبت کند
-    const session = createAdminSession(username.trim().toLowerCase())
+    const session = await createAdminSession(username.trim().toLowerCase())
     return NextResponse.json({
       ok: true,
       token: session.token,

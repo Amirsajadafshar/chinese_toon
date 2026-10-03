@@ -51,7 +51,7 @@ function isNotFound(e: unknown): boolean {
 
 export async function GET(req: NextRequest) {
   try {
-    const admin = isAuthorized(req)
+    const admin = await isAuthorized(req)
     const onlyArchived = req.nextUrl.searchParams.get('archived') === '1'
     if (onlyArchived && !admin) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -70,12 +70,12 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  if (!isAuthorized(req)) {
+  if (!(await isAuthorized(req))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   const guard = guardResponse(req)
   if (guard) return guard
-  const rl = rateLimit('faq-write', req, 30, 600, 300)
+  const rl = await rateLimit('faq-write', req, 30, 600, 300)
   if (!rl.ok) return tooManyRequests(rl)
 
   try {
@@ -104,12 +104,12 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
-  if (!isAuthorized(req)) {
+  if (!(await isAuthorized(req))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   const guard = guardResponse(req)
   if (guard) return guard
-  const rl = rateLimit('faq-write', req, 30, 600, 300)
+  const rl = await rateLimit('faq-write', req, 30, 600, 300)
   if (!rl.ok) return tooManyRequests(rl)
 
   try {
@@ -157,12 +157,12 @@ export async function PATCH(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  if (!isAuthorized(req)) {
+  if (!(await isAuthorized(req))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   const guard = guardResponse(req)
   if (guard) return guard
-  const rl = rateLimit('faq-write', req, 30, 600, 300)
+  const rl = await rateLimit('faq-write', req, 30, 600, 300)
   if (!rl.ok) return tooManyRequests(rl)
 
   try {
