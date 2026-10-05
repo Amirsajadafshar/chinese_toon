@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// ✉️ زیرساخت ایمیل سایت — فاز ۴۰ (بازیابی رمز عبور)
+// ✉️ زیرساخت ایمیل سایت — فاز ۴۰ (بازیابی رمز عبور با کد تأیید)
 //
 // بدون وابستگی جدید: اگر متغیرهای محیطی ارائه‌دهنده تنظیم شده باشند، ایمیل با
 // HTTP API همان ارائه‌دهنده ارسال می‌شود؛ وگرنه در توسعه فقط در کنسول سرور
@@ -11,7 +11,8 @@
 //                     (پیش‌فرض: onboarding@resend.dev تا قبل از دامنهٔ تأییدشده کار کند)
 //
 // اصول امنیتی:
-//   • رمز عبور هرگز در ایمیل/لاگ/پاسخ نمی‌رود — فقط لینک یک‌بارمصرف ۶۰ دقیقه‌ای.
+//   • کد تأیید هرگز در پاسخ API تولیدی نمی‌آید (به‌جز حالت توسعهٔ بدون ارائه‌دهنده
+//     برای تست محلی — هرگز در production) و در دیتابیس فقط sha256 آن ذخیره می‌شود.
 //   • کلید API هرگز لاگ نمی‌شود؛ خطاها فقط به‌صورت پیام کوتاه ثبت می‌شوند.
 // ---------------------------------------------------------------------------
 
@@ -23,7 +24,14 @@ export interface MailResult {
   provider: 'resend' | 'console'
 }
 
-function brandHtml(resetUrl: string, minutes: number): string {
+/** آیا حالت «توسعهٔ بدون ارائه‌دهنده» فعال است؟ (فقط لوکال — هرگز production) */
+export function isDevMailPreview(): boolean {
+  return (
+    !(process.env.RESEND_API_KEY ?? '').trim() && process.env.NODE_ENV !== 'production'
+  )
+}
+
+function brandHtml(code: string, minutes: number): string {
   return `<!doctype html>
 <html><body style="margin:0;padding:0;background:#f6f4ec;font-family:Arial,Helvetica,sans-serif;">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f6f4ec;padding:32px 12px;">
@@ -31,28 +39,23 @@ function brandHtml(resetUrl: string, minutes: number): string {
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border-radius:20px;border:1px solid #e4e0d0;overflow:hidden;">
         <tr><td style="background:#dfe8d8;padding:28px 32px;">
           <h1 style="margin:0;font-size:22px;color:#4a3f2e;">🧧 Chinese Toon</h1>
-          <p style="margin:6px 0 0;font-size:13px;color:#6d6250;">Reset your password</p>
+          <p style="margin:6px 0 0;font-size:13px;color:#6d6250;">Password reset verification code</p>
         </td></tr>
         <tr><td style="padding:32px;">
           <p style="margin:0 0 16px;font-size:15px;color:#4a3f2e;line-height:1.6;">
             Hello,<br/>
             We received a request to reset the password for your Chinese Toon account.
-            Click the button below to choose a new password:
+            Enter this verification code on the reset page to choose a new password:
           </p>
           <p style="margin:24px 0;text-align:center;">
-            <a href="${resetUrl}" style="display:inline-block;background:#b8cf9f;color:#3d331f;text-decoration:none;font-weight:bold;font-size:15px;padding:14px 28px;border-radius:999px;">
-              Reset Password
-            </a>
-          </p>
-          <p style="margin:0 0 12px;font-size:13px;color:#6d6250;line-height:1.6;">
-            Or copy this link into your browser:<br/>
-            <span style="color:#8a7f68;word-break:break-all;">${resetUrl}</span>
+            <span style="display:inline-block;background:#f0f4ea;border:1px solid #d8e2cc;border-radius:16px;padding:18px 32px;font-size:38px;font-weight:bold;letter-spacing:12px;color:#3d331f;font-family:'Courier New',monospace;">${code}</span>
           </p>
           <p style="margin:0 0 8px;font-size:13px;color:#6d6250;">
-            ⏱️ This link expires in <strong>${minutes} minutes</strong> and can be used only <strong>once</strong>.
+            ⏱️ This code expires in <strong>${minutes} minutes</strong> and can be used only <strong>once</strong>.
           </p>
           <p style="margin:0;font-size:13px;color:#6d6250;line-height:1.6;">
             🔒 Didn't request this? You can safely ignore this email — your password will stay unchanged.
+            Never share this code with anyone.
           </p>
         </td></tr>
         <tr><td style="background:#faf8f0;padding:16px 32px;border-top:1px solid #eee9da;">
@@ -66,36 +69,37 @@ function brandHtml(resetUrl: string, minutes: number): string {
 </body></html>`
 }
 
-function brandText(resetUrl: string, minutes: number): string {
+function brandText(code: string, minutes: number): string {
   return [
-    'Chinese Toon — Password Reset',
+    'Chinese Toon — Password Reset Verification Code',
     '',
     'We received a request to reset the password for your account.',
-    'Open this one-time link (valid for ' + minutes + ' minutes) to choose a new password:',
-    resetUrl,
+    'Your verification code is: ' + code,
     '',
+    'Enter it on the reset page within ' + minutes + ' minutes. The code can be used only once.',
     "Didn't request this? You can safely ignore this email — your password will stay unchanged.",
+    'Never share this code with anyone.',
   ].join('\n')
 }
 
 /**
- * ارسال ایمیل «بازیابی رمز عبور».
+ * ارسال ایمیل «کد تأیید بازیابی رمز عبور».
  * با RESEND_API_KEY واقعاً ارسال می‌شود؛ بدون آن فقط در کنسول سرور لاگ می‌شود
  * (توسعه/سندباکس). پاسخ API به کاربر هرگز بسته به نتیجهٔ این تابع تغییر نمی‌کند
  * (ضد افشای وجود/عدم‌وجود حساب).
  */
-export async function sendPasswordResetEmail(
+export async function sendPasswordResetCode(
   to: string,
-  resetUrl: string,
+  code: string,
   minutes: number
 ): Promise<MailResult> {
   const apiKey = (process.env.RESEND_API_KEY ?? '').trim()
   const from = (process.env.MAIL_FROM ?? '').trim() || 'Chinese Toon <onboarding@resend.dev>'
 
   if (!apiKey) {
-    // بدون ارائه‌دهنده — فقط لاگ سروری (سندباکس/توسعه). توکن خام فقط اینجاست.
+    // بدون ارائه‌دهنده — فقط لاگ سروری (سندباکس/توسعه). کد خام فقط اینجاست.
     console.log(
-      `[mail] RESEND_API_KEY not configured — password reset link for ${to} (console-only delivery):\n${resetUrl}`
+      `[mail] RESEND_API_KEY not configured — password reset code for ${to} (console-only delivery):\n  code: ${code}`
     )
     return { sent: false, provider: 'console' }
   }
@@ -110,9 +114,9 @@ export async function sendPasswordResetEmail(
       body: JSON.stringify({
         from,
         to: [to],
-        subject: 'Reset your Chinese Toon password',
-        html: brandHtml(resetUrl, minutes),
-        text: brandText(resetUrl, minutes),
+        subject: `Your Chinese Toon verification code: ${code}`,
+        html: brandHtml(code, minutes),
+        text: brandText(code, minutes),
       }),
       signal: AbortSignal.timeout(10_000),
     })

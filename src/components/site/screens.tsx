@@ -76,8 +76,8 @@ export function AccountScreen() {
   return <AccountPage onNavigate={navigateTo} onToast={showToast} go={go} />
 }
 
-export function PasswordResetScreen({ mode, token }: { mode: 'forgot' | 'reset'; token: string }) {
-  return <PasswordResetPage mode={mode} token={token} />
+export function PasswordResetScreen() {
+  return <PasswordResetPage />
 }
 
 export function AdminScreen() {

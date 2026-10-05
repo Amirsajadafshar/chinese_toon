@@ -1578,17 +1578,16 @@ export const siteContent = {
     rememberMe: "Remember me for 30 days",
     passwordHint: "At least 8 characters.",
     forgotPasswordLink: "Forgot password?",
-    // 🔁 فراموشی رمز عبور (#/forgot-password)
+    // 🔁 فراموشی رمز عبور (/forgot-password — جریان کدمحور)
     forgotTitle: "Reset Your Password",
-    forgotSubtitle: "Enter the email you registered with and we'll send you a secure one-time reset link.",
-    forgotSubmit: "Send Reset Link",
+    forgotSubtitle: "Enter the email you registered with and we'll email you a 6-digit verification code.",
+    forgotSubmit: "Send Verification Code",
     forgotSending: "Sending…",
-    forgotSuccess:
-      "If an account exists for this email, a password reset link has been sent. Please check your inbox (and spam folder). The link expires in 60 minutes and can be used once.",
     forgotBackToLogin: "Back to Sign In",
-    // 🔁 تعیین رمز جدید (#/reset-password?token=…)
-    resetTitle: "Choose a New Password",
-    resetSubtitle: "Create a new password for your Chinese Toon account.",
+    // 🔁 مرحلهٔ ۲ — کد تأیید + رمز جدید (همان صفحه /forgot-password)
+    codeLabel: "Verification Code",
+    codePlaceholder: "6-digit code",
+    codeSentTo: "We've sent a 6-digit verification code to {email}. It expires in 10 minutes and can be used once.",
     newPassword: "New Password",
     newPasswordPlaceholder: "At least 8 characters",
     confirmNewPassword: "Confirm New Password",
@@ -1597,10 +1596,9 @@ export const siteContent = {
     resetSuccessTitle: "Password Changed 🎉",
     resetSuccessText: "Your password has been updated. Sign in with your new password to continue — all previous sessions were signed out for your security.",
     resetGoToLogin: "Go to Sign In",
-    resetInvalidTitle: "Link Invalid or Expired",
     resetInvalidText:
-      "This password reset link is invalid, already used, or has expired (links last 60 minutes). Please request a fresh one — it only takes a moment.",
-    resetRequestNew: "Request a New Link",
+      "This verification code is invalid, already used, or has expired (codes last 10 minutes). Request a fresh code — it only takes a moment.",
+    resetRequestNew: "Request a New Code",
     // 👋 نمای پروفایل
     profileTitle: "My Account",
     memberSince: "Member since",

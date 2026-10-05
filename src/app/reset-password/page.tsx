@@ -1,23 +1,16 @@
 import type { Metadata } from "next";
-import { Suspense, use } from "react";
-import { PasswordResetScreen } from "@/components/site/screens";
+import { redirect } from "next/navigation";
 
 export const metadata: Metadata = {
-  title: "New Password — Chinese Toon",
-  description: "Choose a new password for your Chinese Toon account.",
+  title: "Reset Password — Chinese Toon",
+  description: "Reset your Chinese Toon account password.",
   // 🔐 جریان احراز هویت — ایندکس نمی‌شود
   robots: { index: false, follow: false },
 };
 
-export default function Page({
-  searchParams,
-}: {
-  searchParams: Promise<{ token?: string }>;
-}) {
-  const { token } = use(searchParams);
-  return (
-    <Suspense fallback={null}>
-      <PasswordResetScreen mode="reset" token={token?.trim() || ""} />
-    </Suspense>
-  );
+// 🚚 جریان بازیابی رمز حالا کدمحور است: کد ۶ رقمی ایمیل می‌شود و در همان
+// /forgot-password همراه رمز جدید وارد می‌گردد. لینک‌های قدیمی ایمیلی و
+// بوکمارک‌های /reset-password اینجا به آن صفحه می‌رسند.
+export default function Page() {
+  redirect('/forgot-password');
 }

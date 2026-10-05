@@ -12,7 +12,7 @@ export const metadata: Metadata = {
 export default function Page() {
   return (
     <Suspense fallback={null}>
-      <PasswordResetScreen mode="forgot" token="" />
+      <PasswordResetScreen />
     </Suspense>
   );
 }

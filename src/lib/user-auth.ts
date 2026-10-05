@@ -17,7 +17,7 @@ import { db } from '@/lib/db'
 
 export const SESSION_COOKIE = 'ct_user_session'
 export const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000 // ۳۰ روز
-export const RESET_TOKEN_TTL_MS = 60 * 60 * 1000 // توکن بازیابی رمز: ۶۰ دقیقه
+export const RESET_CODE_TTL_MS = 10 * 60 * 1000 // کد تأیید بازیابی رمز: ۱۰ دقیقه
 
 /** هش scrypt رمز — خروجی «salt:hash» */
 export function hashPassword(password: string): string {

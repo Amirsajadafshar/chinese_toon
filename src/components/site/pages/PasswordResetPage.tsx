@@ -1,17 +1,20 @@
 'use client'
 
 // ---------------------------------------------------------------------------
-// 🔐 صفحهٔ بازیابی رمز عبور — فاز ۴۰
+// 🔐 صفحهٔ بازیابی رمز عبور — جریان کدمحور
 //
-// دو روت اختصاصی (فاز SEO — روت واقعی):
-//   • /forgot-password              → فرم «ایمیل بده، لینک امن بفرست»
-//   • /reset-password?token=…       → فرم «رمز جدید + تأیید» با توکن یک‌بارمصرف
+// یک صفحه، دو مرحله:
+//   ① /forgot-password — ایمیل بده ← کد ۶ رقمی ایمیل می‌شود
+//   ② همان صفحه — کد + رمز جدید + تأیید ← رمز عوض می‌شود
+//
+// (/reset-password?token=… قدیمی به این صفحه ریدایرکت می‌شود.)
 //
 // امنیت UX:
 //   • پاسخ فراموشی همیشه عمومی است (وجود/عدم‌وجود حساب لو نمی‌رود).
-//   • رمزها با toggle قابل دیدن‌اند؛ autocomplete درست؛ هیچ رازی در URL نمی‌رود
-//     (فقط توکن یک‌بارمصرف ۶۰ دقیقه‌ای که خودش بخشی از لینک ایمیلی است).
-//   • توکن نامعتبر/منقضی/مصرف‌شده → کارت «درخواست لینک تازه».
+//   • رمزها با toggle قابل دیدن‌اند؛ autocomplete درست؛ هیچ رازی در URL نمی‌رود.
+//   • کد نامعتبر/منقضی/مصرف‌شده → بنر خطا + دکمهٔ «درخواست کد جدید».
+//   • در توسعهٔ محلیِ بدون ارائه‌دهنده ایمیل، کد از پاسخ API (devCode) خودکار
+//     پر می‌شود تا کل جریان قابل تست باشد — در production هرگز.
 // ---------------------------------------------------------------------------
 
 import { useState } from 'react'
@@ -29,7 +32,7 @@ const labelCls = 'block text-sm font-semibold text-brown-dark mb-2'
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
 
-export function PasswordResetPage({ mode, token }: { mode: 'forgot' | 'reset'; token: string }) {
+export function PasswordResetPage() {
   return (
     <div id="page-account-reset">
       <section className="pt-32 pb-24 md:pt-40 relative overflow-hidden">
@@ -43,13 +46,11 @@ export function PasswordResetPage({ mode, token }: { mode: 'forgot' | 'reset'; t
               <span className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-widest text-sage-dark mb-3">
                 <ShieldCheck className="w-3.5 h-3.5" /> Account Security
               </span>
-              <h1 className="text-3xl md:text-5xl font-bold text-brown-dark mb-4">
-                {mode === 'forgot' ? c.forgotTitle : c.resetTitle}
-              </h1>
-              <p className="text-brown-light">{mode === 'forgot' ? c.forgotSubtitle : c.resetSubtitle}</p>
+              <h1 className="text-3xl md:text-5xl font-bold text-brown-dark mb-4">{c.forgotTitle}</h1>
+              <p className="text-brown-light">{c.forgotSubtitle}</p>
             </div>
 
-            {mode === 'forgot' ? <ForgotForm /> : <ResetForm token={token} />}
+            <ResetFlow />
           </div>
         </div>
       </section>
@@ -58,13 +59,57 @@ export function PasswordResetPage({ mode, token }: { mode: 'forgot' | 'reset'; t
 }
 
 // ---------------------------------------------------------------------------
+// جریان دومرحله‌ای: ① ایمیل → ② کد + رمز جدید
+// ---------------------------------------------------------------------------
+
+type FlowStep = 'email' | 'code' | 'done'
+
+function ResetFlow() {
+  const [step, setStep] = useState<FlowStep>('email')
+  const [email, setEmail] = useState('')
+  const [devCode, setDevCode] = useState('')
+
+  if (step === 'email') {
+    return (
+      <EmailStep
+        email={email}
+        setEmail={setEmail}
+        onSent={(sentEmail, devCode) => {
+          setEmail(sentEmail)
+          setDevCode(devCode ?? '')
+          setStep('code')
+        }}
+      />
+    )
+  }
+  if (step === 'code') {
+    return (
+      <CodeStep
+        email={email}
+        initialCode={devCode}
+        devAutoFilled={Boolean(devCode)}
+        onBackToEmail={() => setStep('email')}
+        onDone={() => setStep('done')}
+      />
+    )
+  }
+  return <DoneView />
+}
+
+// ---------------------------------------------------------------------------
 // ① فراموشی رمز — ایمیل بده (پاسخ همیشه عمومی)
 // ---------------------------------------------------------------------------
 
-function ForgotForm() {
-  const [email, setEmail] = useState('')
+function EmailStep({
+  email,
+  setEmail,
+  onSent,
+}: {
+  email: string
+  setEmail: (v: string) => void
+  onSent: (email: string, devCode?: string) => void
+}) {
   const [sending, setSending] = useState(false)
-  const [sent, setSent] = useState(false)
   const [error, setError] = useState('')
 
   const submit = async (e: React.FormEvent) => {
@@ -81,9 +126,9 @@ function ForgotForm() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: email.trim() }),
       })
-      const data: { error?: string } | null = await res.json().catch(() => null)
+      const data: { error?: string; devCode?: string } | null = await res.json().catch(() => null)
       if (res.ok) {
-        setSent(true)
+        onSent(email.trim(), typeof data?.devCode === 'string' ? data.devCode : undefined)
         return
       }
       setError(data?.error || 'Could not send the request. Please try again.')
@@ -92,26 +137,6 @@ function ForgotForm() {
     } finally {
       setSending(false)
     }
-  }
-
-  if (sent) {
-    return (
-      <div className="bg-white rounded-3xl p-8 md:p-10 shadow-lg border border-sage-light/20 text-center animate-ct-fadeInUp">
-        <div className="w-20 h-20 rounded-full bg-sage-light/40 mx-auto mb-6 flex items-center justify-center">
-          <MailCheck className="w-9 h-9 text-sage-dark" />
-        </div>
-        <p className="text-brown leading-relaxed">{c.forgotSuccess}</p>
-        <button
-          type="button"
-          onClick={() => {
-            appNavigate('/account?tab=login')
-          }}
-          className="mt-8 bg-sage text-brown-dark px-8 py-3.5 rounded-2xl text-sm font-semibold hover:bg-sage-dark transition-colors cursor-pointer inline-flex items-center gap-2 min-h-[44px]"
-        >
-          <ArrowLeft className="w-4 h-4" /> {c.forgotBackToLogin}
-        </button>
-      </div>
-    )
   }
 
   return (
@@ -171,27 +196,38 @@ function ForgotForm() {
 }
 
 // ---------------------------------------------------------------------------
-// ② رمز جدید با توکن — توکن از hash query می‌آید؛ یک‌بارمصرف
+// ② کد تأیید + رمز جدید — همان صفحه، بدون بازکردن ایمیل روی دستگاه دیگر
 // ---------------------------------------------------------------------------
 
-function ResetForm({ token }: { token: string }) {
+function CodeStep({
+  email,
+  initialCode,
+  devAutoFilled,
+  onBackToEmail,
+  onDone,
+}: {
+  email: string
+  initialCode: string
+  devAutoFilled: boolean
+  onBackToEmail: () => void
+  onDone: () => void
+}) {
+  const [code, setCode] = useState(initialCode)
   const [pw, setPw] = useState('')
   const [confirm, setConfirm] = useState('')
   const [showPw, setShowPw] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const [sending, setSending] = useState(false)
-  const [done, setDone] = useState(false)
   const [invalid, setInvalid] = useState(false)
   const [error, setError] = useState('')
-
-  // توکن نبود → همان نمای «لینک نامعتبر» (بدون فرم)
-  if (!token || !/^[0-9a-f]{64}$/.test(token)) return <InvalidView />
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
+    setInvalid(false)
     const errs: Record<string, string> = {}
+    if (!/^\d{6}$/.test(code.trim())) errs.code = 'Enter the 6-digit code from your email'
     if (pw.length < 8) errs.password = 'Password must be at least 8 characters'
     if (pw.length > 128) errs.password = 'Password is too long'
     if (confirm !== pw) errs.confirmPassword = 'Passwords do not match'
@@ -205,17 +241,18 @@ function ResetForm({ token }: { token: string }) {
       const res = await fetch('/api/auth/reset-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, password: pw, confirmPassword: confirm }),
+        body: JSON.stringify({ email, code: code.trim(), password: pw, confirmPassword: confirm }),
       })
       const data: { error?: string; code?: string; errors?: Record<string, string> } | null = await res
         .json()
         .catch(() => null)
       if (res.ok) {
-        setDone(true)
+        onDone()
         return
       }
-      if (data?.code === 'INVALID_TOKEN') {
+      if (data?.code === 'INVALID_CODE') {
         setInvalid(true)
+        setError(data?.error || '')
         return
       }
       if (data?.errors && typeof data.errors === 'object') {
@@ -231,37 +268,69 @@ function ResetForm({ token }: { token: string }) {
     }
   }
 
-  if (invalid) return <InvalidView />
-  if (done) {
-    return (
-      <div className="bg-white rounded-3xl p-8 md:p-10 shadow-lg border border-sage-light/20 text-center animate-ct-fadeInUp">
-        <div className="w-20 h-20 rounded-full bg-sage-light/40 mx-auto mb-6 flex items-center justify-center text-3xl">
-          🎉
-        </div>
-        <h2 className="text-xl font-bold text-brown-dark mb-3">{c.resetSuccessTitle}</h2>
-        <p className="text-brown leading-relaxed">{c.resetSuccessText}</p>
-        <button
-          type="button"
-          onClick={() => {
-            appNavigate('/account?tab=login')
-          }}
-          className="mt-8 bg-sage text-brown-dark px-8 py-3.5 rounded-2xl text-sm font-semibold hover:bg-sage-dark transition-colors cursor-pointer inline-flex items-center gap-2 min-h-[44px]"
-        >
-          <ArrowLeft className="w-4 h-4" /> {c.resetGoToLogin}
-        </button>
-      </div>
-    )
-  }
-
   return (
     <form onSubmit={submit} noValidate className="bg-white rounded-3xl p-8 md:p-10 shadow-lg border border-sage-light/20 animate-ct-fadeInUp">
-      {/* 🔑 نشان توکن — فقط ۶ کاراکتر اول برای اطمینان بصری کاربر (توکن کامل حساس نیست ولی محتاط می‌مانیم) */}
-      <p className="flex items-center gap-2 text-xs text-brown-light bg-cream/60 border border-sage-light/25 rounded-xl px-4 py-3 mb-8">
-        <KeyRound className="w-4 h-4 text-sage-dark flex-shrink-0" />
-        Secure one-time reset link verified — valid for 60 minutes from the email.
-      </p>
+      {/* 📬 بنر «کد ارسال شد» — بدون افشای وجود/عدم‌وجود حساب */}
+      <div className="flex items-start gap-3 bg-cream/60 border border-sage-light/25 rounded-xl px-4 py-3 mb-8">
+        <MailCheck className="w-4 h-4 text-sage-dark flex-shrink-0 mt-0.5" />
+        <div className="text-xs text-brown-light leading-relaxed">
+          <p>{c.codeSentTo.replace('{email}', email)}</p>
+          {devAutoFilled && (
+            <p className="mt-1 text-amber-600">Dev mode: verification code auto-filled for local testing.</p>
+          )}
+        </div>
+      </div>
+
+      {invalid && (
+        <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 mb-8" role="alert">
+          <TriangleAlert className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+          <div className="text-xs text-amber-800 leading-relaxed">
+            <p>{c.resetInvalidText}</p>
+            <button
+              type="button"
+              onClick={onBackToEmail}
+              className="mt-1 font-semibold text-amber-800 hover:underline cursor-pointer"
+            >
+              {c.resetRequestNew}
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="space-y-6">
+        <div>
+          <label htmlFor="reset-code" className={labelCls}>
+            {c.codeLabel} *
+          </label>
+          <input
+            id="reset-code"
+            type="text"
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            maxLength={6}
+            required
+            value={code}
+            onChange={(e) => {
+              setCode(e.target.value.replace(/[^\d]/g, '').slice(0, 6))
+              setFieldErrors((prev) => {
+                if (!prev.code) return prev
+                const next = { ...prev }
+                delete next.code
+                return next
+              })
+            }}
+            className={`${inputCls} text-center text-xl font-bold tracking-[0.5em] font-mono`}
+            placeholder={c.codePlaceholder}
+            aria-invalid={fieldErrors.code ? true : undefined}
+            aria-describedby={fieldErrors.code ? 'reset-err-code' : undefined}
+          />
+          {fieldErrors.code && (
+            <p id="reset-err-code" role="alert" className="text-xs text-red-500 mt-1.5">
+              {fieldErrors.code}
+            </p>
+          )}
+        </div>
+
         <div>
           <label htmlFor="reset-password" className={labelCls}>
             {c.newPassword} *
@@ -350,7 +419,7 @@ function ResetForm({ token }: { token: string }) {
         </div>
       </div>
 
-      {error && (
+      {error && !invalid && (
         <p className="mt-6 text-sm text-red-500 bg-red-50 border border-red-100 rounded-xl px-4 py-3" role="alert">
           {error}
         </p>
@@ -367,43 +436,42 @@ function ResetForm({ token }: { token: string }) {
           </>
         ) : (
           <>
-            {c.resetSubmit} <ArrowRight className="w-[18px] h-[18px]" />
+            <KeyRound className="w-[18px] h-[18px]" /> {c.resetSubmit}
           </>
         )}
       </button>
+
+      <p className="mt-6 text-sm text-brown-light text-center">
+        <button
+          type="button"
+          onClick={onBackToEmail}
+          className="text-sage-dark font-semibold hover:underline cursor-pointer"
+        >
+          ← {c.resetRequestNew}
+        </button>
+      </p>
     </form>
   )
 }
 
-// کارت «لینک نامعتبر/منقضی/مصرف‌شده» — با مسیر رفع
-function InvalidView() {
+// کارت موفقیت — بعد از تغییر رمز
+function DoneView() {
   return (
     <div className="bg-white rounded-3xl p-8 md:p-10 shadow-lg border border-sage-light/20 text-center animate-ct-fadeInUp">
-      <div className="w-20 h-20 rounded-full bg-amber-100/70 mx-auto mb-6 flex items-center justify-center">
-        <TriangleAlert className="w-9 h-9 text-amber-600" />
+      <div className="w-20 h-20 rounded-full bg-sage-light/40 mx-auto mb-6 flex items-center justify-center text-3xl">
+        🎉
       </div>
-      <h2 className="text-xl font-bold text-brown-dark mb-3">{c.resetInvalidTitle}</h2>
-      <p className="text-brown leading-relaxed">{c.resetInvalidText}</p>
-      <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
-        <button
-          type="button"
-          onClick={() => {
-            appNavigate('/forgot-password')
-          }}
-          className="bg-sage text-brown-dark px-8 py-3.5 rounded-2xl text-sm font-semibold hover:bg-sage-dark transition-colors cursor-pointer inline-flex items-center gap-2 min-h-[44px]"
-        >
-          <KeyRound className="w-4 h-4" /> {c.resetRequestNew}
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            appNavigate('/account?tab=login')
-          }}
-          className="px-8 py-3.5 rounded-2xl text-sm font-semibold border border-sage-light/50 bg-white/70 text-brown hover:border-sage transition-colors cursor-pointer inline-flex items-center gap-2 min-h-[44px]"
-        >
-          <ArrowLeft className="w-4 h-4" /> {c.forgotBackToLogin}
-        </button>
-      </div>
+      <h2 className="text-xl font-bold text-brown-dark mb-3">{c.resetSuccessTitle}</h2>
+      <p className="text-brown leading-relaxed">{c.resetSuccessText}</p>
+      <button
+        type="button"
+        onClick={() => {
+          appNavigate('/account?tab=login')
+        }}
+        className="mt-8 bg-sage text-brown-dark px-8 py-3.5 rounded-2xl text-sm font-semibold hover:bg-sage-dark transition-colors cursor-pointer inline-flex items-center gap-2 min-h-[44px]"
+      >
+        <ArrowLeft className="w-4 h-4" /> {c.resetGoToLogin}
+      </button>
     </div>
   )
 }

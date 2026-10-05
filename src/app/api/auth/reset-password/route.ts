@@ -1,17 +1,23 @@
 // ---------------------------------------------------------------------------
-// 👤 POST /api/auth/reset-password — تعیین رمز جدید با توکن بازیابی (فاز ۴۰)
+// 👤 POST /api/auth/reset-password — تعیین رمز جدید با کد تأیید (فاز ۴۰)
+//
+// جریان کدمحور: بدنه {email, code, password, confirmPassword} — همان فرمی که
+// کد به ایمیلش رفته است، خودش کد و رمز جدید را می‌فرستد.
 //
 // امنیت:
-//   • توکن فقط به‌صورت sha256 جست‌وجو می‌شود؛ توکن خام در دیتابیس نیست.
-//   • یک‌بارمصرف: usedAt در همان تراکنش ست می‌شود — لینک مصرف‌شده هرگز دوباره
+//   • کد فقط به‌صورت sha256 جست‌وجو می‌شود؛ کد خام در دیتابیس نیست.
+//   • کد باید متعلق به همان ایمیلی باشد که در بدنه آمده (کد برای حسابِ دیگر
+//     حتی اگر هشش پیدا شود رد می‌شود).
+//   • یک‌بارمصرف: usedAt در همان تراکش ست می‌شود — کد مصرف‌شده هرگز دوباره
 //     کار نمی‌کند (ضد replay).
-//   • زمان‌محدود: توکن منقضی رد می‌شود.
-//   • پیام خطا برای «نامعتبر»، «مصرف‌شده» و «منقضی» یکی است (ضد افشا).
-//   • بعد از تغییر موفق رمز: همهٔ توکن‌های باز دیگرِ کاربر و همهٔ نشست‌های
-//     فعالش (همهٔ دستگاه‌ها) باطل می‌شوند — مهاجمی که سشن داشته باشد بیرون می‌افتد.
+//   • زمان‌محدود: کد ۱۰ دقیقه‌ای رد می‌شود.
+//   • پیام خطا برای «نامعتبر»، «مصرف‌شده»، «منقضی» و «ایمیل بدون کد» یکی است
+//     (ضد افشای وجود/عدم‌وجود حساب).
+//   • فضای حدس کد ۱۰^۶ است → سقف تلاش سخت‌گیرانه: ۸ تلاش در ۱۰ دقیقه برای
+//     هر IP؛ سهمیهٔ تولید کد هم در forgot-password جداگانه بسته است.
+//   • بعد از تغییر موفق رمز: همهٔ کدهای باز دیگرِ کاربر و همهٔ نشست‌های فعالش
+//     (همهٔ دستگاه‌ها) باطل می‌شوند — مهاجمی که سشن داشته باشد بیرون می‌افتد.
 //   • رمز جدید با scrypt هش می‌شود؛ سقف طول ۱۲۸ (ضد DoS هش) حفظ است.
-//   • محدودسازی نرخ: ۱۰ تلاش در ۱۰ دقیقه برای هر IP (حدس توکن عملاً غیرممکن
-//     است ولی لایهٔ دوم هست).
 // ---------------------------------------------------------------------------
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -27,13 +33,13 @@ function sha256(value: string): string {
   return createHash('sha256').update(value).digest('hex')
 }
 
-/** پیام عمومی برای هر توکنِ نامعتبر/مصرف‌شده/منقضی — بدون جزئیات بیشتر */
-function invalidToken(): NextResponse {
+/** پیام عمومی برای هر کدِ نامعتبر/مصرف‌شده/منقضی — بدون جزئیات بیشتر */
+function invalidCode(): NextResponse {
   return NextResponse.json(
     {
       error:
-        'This password reset link is invalid or has expired. Please request a new password reset link.',
-      code: 'INVALID_TOKEN',
+        'This verification code is invalid or has expired. Please request a new code.',
+      code: 'INVALID_CODE',
     },
     { status: 400 }
   )
@@ -44,8 +50,8 @@ export async function POST(req: NextRequest) {
   const guard = guardResponse(req)
   if (guard) return guard
 
-  // ۱۰ تلاش در ۱۰ دقیقه برای هر IP
-  const rl = await rateLimit('auth-reset', req, 10, 600, 600)
+  // ۸ تلاش در ۱۰ دقیقه برای هر IP — فضای حدس کد ۱۰^۶ است
+  const rl = await rateLimit('auth-reset', req, 8, 600, 600)
   if (!rl.ok) return tooManyRequests(rl)
 
   let body: Record<string, unknown>
@@ -55,15 +61,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  const token = typeof body.token === 'string' ? body.token.trim().toLowerCase() : ''
+  const email = typeof body.email === 'string' ? body.email.trim().toLowerCase().slice(0, 120) : ''
+  const code = typeof body.code === 'string' ? body.code.trim() : ''
   const password = typeof body.password === 'string' ? body.password : ''
   const confirmPassword = typeof body.confirmPassword === 'string' ? body.confirmPassword : ''
 
   // اعتبارسنجی ورودی — پیام‌های فیلد-محور برای UX
   const errors: Record<string, string> = {}
-  if (!token || !/^[0-9a-f]{64}$/.test(token)) {
-    return invalidToken()
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
+    errors.email = 'Please enter a valid email address'
   }
+  if (!/^\d{6}$/.test(code)) errors.code = 'Enter the 6-digit code from your email'
   if (password.length < 8) errors.password = 'Password must be at least 8 characters'
   if (password.length > 128) errors.password = 'Password is too long'
   if (confirmPassword !== password) errors.confirmPassword = 'Passwords do not match'
@@ -72,20 +80,28 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const tokenHash = sha256(token)
-    const record = await db.passwordResetToken.findUnique({
-      where: { tokenHash },
-      select: { id: true, userId: true, expiresAt: true, usedAt: true },
-    })
+    const [user, record] = await Promise.all([
+      db.user.findUnique({ where: { email }, select: { id: true } }),
+      db.passwordResetToken.findUnique({
+        where: { tokenHash: sha256(code) },
+        select: { id: true, userId: true, expiresAt: true, usedAt: true },
+      }),
+    ])
 
-    // نامعتبر / مصرف‌شده / منقضی — همه یک پیام
-    if (!record || record.usedAt || record.expiresAt.getTime() < Date.now()) {
-      return invalidToken()
+    // نامعتبر / مصرف‌شده / منقضی / کدِ حسابِ دیگر — همه یک پیام
+    if (
+      !user ||
+      !record ||
+      record.usedAt ||
+      record.userId !== user.id ||
+      record.expiresAt.getTime() < Date.now()
+    ) {
+      return invalidCode()
     }
 
     const passwordHash = hashPassword(password)
 
-    // تراکنش اتمی: رمز جدید + مصرف توکن + ابطال توکن‌های باز + خروج از همه نشست‌ها
+    // تراکنش اتمی: رمز جدید + مصرف کد + ابطال کدهای باز + خروج از همه نشست‌ها
     await db.$transaction([
       db.user.update({ where: { id: record.userId }, data: { passwordHash } }),
       db.passwordResetToken.update({
