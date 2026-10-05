@@ -3672,6 +3672,36 @@ export function AdminPage({ onToast }: { onToast?: (m: string) => void }) {
     { key: 'settings' as const, label: a.tabSettings, count: 0, alert: 0, icon: SlidersHorizontal },
   ]
 
+  // 🗂️ ناوبری دومرحله‌ای — ۱۹ تب در ۵ دسته؛ دستهٔ فعال از تب جاری مشتق می‌شود
+  // (پرش‌های goToPending/جست‌وجو خودکار دستهٔ درست را نشان می‌دهند).
+  const tabCategories: { key: string; label: string; icon: typeof LayoutDashboard; tabKeys: string[] }[] = [
+    { key: 'overview', label: a.catOverview, icon: LayoutDashboard, tabKeys: ['dashboard'] },
+    {
+      key: 'community',
+      label: a.catCommunity,
+      icon: UsersRound,
+      tabKeys: ['students', 'registrations', 'messages', 'newsletter', 'reviews'],
+    },
+    {
+      key: 'commerce',
+      label: a.catCommerce,
+      icon: CreditCard,
+      tabKeys: ['classes', 'orders', 'discounts', 'scheduling'],
+    },
+    {
+      key: 'content',
+      label: a.catContent,
+      icon: BookOpen,
+      tabKeys: ['lessons', 'words', 'quiz', 'blog', 'teachers', 'faq'],
+    },
+    { key: 'system', label: a.catSystem, icon: DatabaseBackup, tabKeys: ['backup', 'logs', 'settings'] },
+  ]
+
+  const activeCategory = tabCategories.find((c) => c.tabKeys.includes(tab)) ?? tabCategories[0]
+  const visibleTabs = tabs.filter((t) => activeCategory.tabKeys.includes(t.key))
+  const categoryAlert = (tabKeys: string[]) =>
+    tabs.filter((t) => tabKeys.includes(t.key)).reduce((sum, t) => sum + t.alert, 0)
+
   return (
     <div id="page-admin">
       <section className="pt-32 pb-10 md:pt-40">
@@ -3800,9 +3830,46 @@ export function AdminPage({ onToast }: { onToast?: (m: string) => void }) {
             </div>
           )}
 
-          {/* تب‌ها */}
+          {/* 🗂️ سطح ۱ — دسته‌ها */}
+          <div className="flex flex-wrap gap-2.5 mb-3">
+            {tabCategories.map((cat) => {
+              const CatIcon = cat.icon
+              const catActive = activeCategory.key === cat.key
+              const catAlert = categoryAlert(cat.tabKeys)
+              return (
+                <button
+                  key={cat.key}
+                  onClick={() => {
+                    if (!catActive) {
+                      const first = tabs.find((t) => cat.tabKeys.includes(t.key))
+                      if (first) setTab(first.key)
+                    }
+                  }}
+                  className={`px-5 py-2.5 rounded-full text-sm font-semibold inline-flex items-center gap-2 transition-all cursor-pointer ${
+                    catActive
+                      ? 'bg-brown-dark text-cream shadow-sm'
+                      : 'bg-white/80 border border-sage-light/40 text-brown hover:border-sage'
+                  }`}
+                >
+                  <CatIcon className="w-4 h-4" />
+                  {cat.label}
+                  {catAlert > 0 && (
+                    <span
+                      title={a.needAttention}
+                      className="inline-flex items-center gap-1 bg-peach text-brown-dark text-xs font-bold px-2 py-0.5 rounded-full"
+                    >
+                      <Bell className="w-3 h-3" aria-hidden="true" />
+                      {catAlert}
+                    </span>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+
+          {/* تب‌ها — فقط تب‌های دستهٔ فعال */}
           <div ref={tabsRef} className="flex flex-wrap gap-3 mb-6 scroll-mt-32">
-            {tabs.map((t) => {
+            {visibleTabs.map((t) => {
               const Icon = t.icon
               const active = tab === t.key
               return (

@@ -2806,6 +2806,12 @@ export const siteContent = {
     // 🧾 فاز ۵۳ — تب لاگ‌ها و خروجی داده
     tabLogs: "Logs & Export",
     tabSettings: "Settings",
+    // 🗂️ دسته‌بندی تب‌های پنل — ناوبری دومرحله‌ای (دسته ← تب)
+    catOverview: "Overview",
+    catCommunity: "Students & Community",
+    catCommerce: "Sales & Payments",
+    catContent: "Content & Learning",
+    catSystem: "System",
     // ✏️ متن‌های هیروی خانه (فاز ۲۲)
     settingsHeroTitle: "Home hero text",
     settingsHeroHint:
