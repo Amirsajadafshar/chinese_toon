@@ -1127,15 +1127,6 @@ export const siteContent = {
         },
       ],
     },
-    founder: {
-      title: "Meet the Founder",
-      name: "[Founder Name]", // 👈 نام مؤسس را اینجا بنویسید
-      role: "Founder & Lead Teacher",
-      bio: "[Short biography placeholder — Add founder's background, teaching experience, qualifications, and passion for Chinese education here.]",
-      // 📧 دکمهٔ ایمیل به مؤسس — ایمیل از contact.email بالای همین فایل خوانده می‌شود
-      emailCta: "Email the Founder", // نوشتهٔ دکمه
-      emailNote: "Questions about courses or cooperation? Write directly to the founder.", // جملهٔ بالای دکمه
-    },
     // -------------------------------------------------------------
     // 👩‍🏫 تیم معلم‌ها (بخش جدید!) — معلم اضافه/کم کنید:
     //    برای هر معلم یک بلوک { ... } داخل items کپی کنید.

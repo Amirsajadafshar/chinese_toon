@@ -273,49 +273,10 @@ export function AboutPage({ onNavigate }: AboutPageProps) {
         </div>
       </section>
 
-      {/* مؤسس */}
-      <section className="py-20 bg-sec-peach relative overflow-hidden">
-        {/* 🌊 لبهٔ منحنی از بخش کره‌ای */}
-        <CurveDivider fill="var(--color-sec-butter)" />
-        <div className="max-w-7xl mx-auto px-6 relative">
-          <div className="text-center mb-14">
-            <h2 className="text-2xl md:text-3xl font-bold text-brown-dark">{c.founder.title}</h2>
-          </div>
-          <div className="max-w-2xl mx-auto bg-cream rounded-3xl p-8 md:p-10 text-center relative overflow-hidden">
-            {/* واترمارک تزئینی کاراکتر چینی */}
-            <span
-              aria-hidden="true"
-              className="char-bg pointer-events-none select-none absolute -top-6 -left-4"
-              style={{ fontSize: '150px', opacity: 0.05 }}
-            >
-              师
-            </span>
-            <div className="w-28 h-28 bg-sage-light/30 rounded-full mx-auto mb-6 flex items-center justify-center relative ring-4 ring-white/70">
-              <User className="w-12 h-12 text-sage-dark" />
-            </div>
-            <h3 className="text-xl font-bold text-brown-dark mb-1">{c.founder.name}</h3>
-            <p className="text-sm text-sage-dark font-medium mb-4">{c.founder.role}</p>
-            <p className="text-sm text-brown-light leading-relaxed mb-6">{c.founder.bio}</p>
-            {/* 📧 ارتباط با مؤسس از طریق ایمیل */}
-            <div className="max-w-sm mx-auto">
-              <p className="text-xs text-brown-light mb-3">{c.founder.emailNote}</p>
-              <a
-                href={`mailto:${siteContent.contact.email}?subject=${encodeURIComponent('Message for the founder — Chinese Toon')}`}
-                className="inline-flex items-center justify-center gap-2 bg-sage text-brown-dark px-7 py-3.5 rounded-full text-sm font-bold hover:bg-sage-dark hover:shadow-[0_4px_16px_rgba(168,201,160,0.4)] transition-all cursor-pointer w-full sm:w-auto min-h-[44px]"
-              >
-                <Mail className="w-4 h-4" aria-hidden="true" />
-                {c.founder.emailCta}
-              </a>
-              <p className="text-xs text-brown-light mt-3">{siteContent.contact.email}</p>
-            </div>
-          </div>
-        </div>
-      </section>
-
       {/* 👩‍🏫 تیم معلم‌ها */}
       <section className="py-20 bg-sec-leaf relative overflow-hidden">
-        {/* 🌊 لبهٔ منحنی از بخش هلویی + نقاط تزئینی */}
-        <CurveDivider fill="var(--color-sec-peach)" />
+        {/* 🌊 لبهٔ منحنی از بخش کره‌ای + نقاط تزئینی */}
+        <CurveDivider fill="var(--color-sec-butter)" />
         <div
           aria-hidden="true"
           className="absolute bottom-24 right-[3%] w-48 h-48 ct-dots opacity-45 [mask-image:radial-gradient(circle,black,transparent_70%)] hidden md:block"
