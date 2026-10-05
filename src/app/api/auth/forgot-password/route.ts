@@ -12,14 +12,15 @@
 //     دیتابیس ذخیره می‌شود؛ ۱۰ دقیقه اعتبار دارد و یک‌بارمصرف است.
 //   • برخورد تصادفیِ هشِ کد دو کاربر (tokenHash unique) → تولید کد جدید (retry).
 //   • هر درخواستِ تازه، کدهای «باز» قبلی همان حساب را باطل می‌کند.
-//   • محدودسازی نرخ: ۵ درخواست در ۱۰ دقیقه برای هر IP + ۴ برای هر ایمیل
-//     (مستقل از IP — اسپم ایمیل مهاجم با چرخش IP هم بسته است).
+//   • محدودسازی نرخ: ۱۰ درخواست در ۱۰ دقیقه برای هر IP + ۸ برای هر ایمیل
+//     در ۳۰ دقیقه (مستقل از IP — اسپم ایمیل مهاجم با چرخش IP هم بسته است).
 //   • رمز عبور هرگز در ایمیل/لاگ نمی‌آید — فقط کد یک‌بارمصرف.
+//   • ایمیل بعد از پاسخ ارسال می‌شود (after) — پاسخ API همیشه فوری است.
 //   • حالت توسعهٔ بدون ارائه‌دهنده: کد برای تست لوکال در devCode برگردانده
 //     می‌شود (فقط وقتی NODE_ENV !== 'production' و ارائه‌دهنده تنظیم نیست).
 // ---------------------------------------------------------------------------
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { randomInt } from 'crypto'
 import { db } from '@/lib/db'
 import { rateLimit, tooManyRequests } from '@/lib/rate-limit'
@@ -47,8 +48,8 @@ export async function POST(req: NextRequest) {
   const guard = guardResponse(req)
   if (guard) return guard
 
-  // ۵ درخواست در ۱۰ دقیقه برای هر IP
-  const rl = await rateLimit('auth-forgot', req, 5, 600, 600)
+  // ۱۰ درخواست در ۱۰ دقیقه برای هر IP
+  const rl = await rateLimit('auth-forgot', req, 10, 600, 600)
   if (!rl.ok) return tooManyRequests(rl)
 
   let body: Record<string, unknown>
@@ -63,8 +64,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Please enter a valid email address' }, { status: 400 })
   }
 
-  // ۴ درخواست در ۳۰ دقیقه برای هر ایمیل — مستقل از IP
-  const rlEmail = await rateLimit(`auth-forgot-email:${email}`, req, 4, 1800, 1800)
+  // ۸ درخواست در ۳۰ دقیقه برای هر ایمیل — مستقل از IP
+  const rlEmail = await rateLimit(`auth-forgot-email:${email}`, req, 8, 1800, 1800)
   if (!rlEmail.ok) return tooManyRequests(rlEmail)
 
   // پاسخ عمومی — مستقل از وجود/عدم‌وجود حساب
@@ -105,12 +106,17 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const mail = await sendPasswordResetCode(email, code, RESET_MINUTES)
-    if (!mail.sent && mail.provider === 'resend') {
-      // ارائه‌دهنده تنظیم بود ولی ارسال شکست — برای عیب‌یابی مالک لاگ می‌شود؛
-      // پاسخ به کاربر همچنان همان پیام عمومی می‌ماند.
-      console.error('[forgot-password] reset code email could not be delivered via provider — owner should check mail configuration')
-    }
+    // 📬 ارسال ایمیل «بعد از» پاسخ — کاربر فوراً پیام را می‌گیرد و هرگز برای
+    // تأخیر شبکهٔ ارائه‌دهنده (تا ۱۲ ثانیه در بدترین حالتِ تایم‌اوت+retry)
+    // منتظر نمی‌ماند. after() تابع سرورلس را تا پایان ارسال زنده نگه می‌دارد.
+    after(async () => {
+      const mail = await sendPasswordResetCode(email, code, RESET_MINUTES)
+      if (!mail.sent && mail.provider === 'resend') {
+        // ارائه‌دهنده تنظیم بود ولی ارسال شکست — برای عیب‌یابی مالک لاگ می‌شود؛
+        // پاسخ به کاربر همچنان همان پیام عمومی می‌ماند.
+        console.error('[forgot-password] reset code email could not be delivered via provider — owner should check mail configuration')
+      }
+    })
 
     // 🧪 فقط توسعهٔ محلی بدون ارائه‌دهنده — در production هرگز
     if (isDevMailPreview()) {
