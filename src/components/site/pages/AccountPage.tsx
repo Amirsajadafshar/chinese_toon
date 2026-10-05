@@ -9,12 +9,13 @@
 // استایل هم‌خانوادهٔ RegisterPage: کارت سفید rounded-3xl + لهجهٔ سیج.
 // ---------------------------------------------------------------------------
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import {
   ArrowRight,
   BookOpen,
   CalendarDays,
+  ChevronDown,
   Clock,
   Copy,
   Eye,
@@ -138,14 +139,45 @@ export function AccountPage({ onNavigate, onToast, go }: AccountPageProps) {
   // کند (اطلاعات پایهٔ حساب — نام و ایمیل — خودکار در فرم استفاده می‌شود).
   const [askRegister, setAskRegister] = useState(false)
 
-  // 🌍 سلکتور کشور — جست‌وجوی زنده + فهرست مرتب‌شدهٔ الفبایی
-  const [countryQuery, setCountryQuery] = useState('')
+  // 🌍 سلکتور کشور — یک فیلد ترکیبی (combobox): تایپ برای جست‌وجو + لیست کشویی.
+  // countryQuery === null یعنی «حالت نمایش»: مقدار انتخاب‌شده (یا placeholder) نشان داده می‌شود.
+  const [countryQuery, setCountryQuery] = useState<string | null>(null)
+  const [countryOpen, setCountryOpen] = useState(false)
+  const countryBoxRef = useRef<HTMLDivElement>(null)
   const sortedCountries = useMemo(() => [...COUNTRIES].sort((a, b) => a.name.localeCompare(b.name)), [])
   const filteredCountries = useMemo(() => {
+    if (countryQuery === null) return sortedCountries
     const q = countryQuery.trim().toLowerCase()
     if (!q) return sortedCountries
     return sortedCountries.filter((co) => co.name.toLowerCase().includes(q))
   }, [countryQuery, sortedCountries])
+  const selectedCountry = COUNTRIES.find((co) => co.code === regForm.country)
+  const selectedCountryDisplay = selectedCountry ? `${flagFromCode(selectedCountry.code)} ${selectedCountry.name}` : ''
+
+  const pickCountry = (code: string) => {
+    setRegForm((f) => ({ ...f, country: code }))
+    setRegErrors((prev) => {
+      if (!prev.country) return prev
+      const next = { ...prev }
+      delete next.country
+      return next
+    })
+    setCountryQuery(null)
+    setCountryOpen(false)
+  }
+
+  // بستن لیست کشور با کلیک بیرون از کادر
+  useEffect(() => {
+    if (!countryOpen) return
+    const onDocMouseDown = (e: MouseEvent) => {
+      if (countryBoxRef.current && !countryBoxRef.current.contains(e.target as Node)) {
+        setCountryOpen(false)
+        setCountryQuery(null)
+      }
+    }
+    document.addEventListener('mousedown', onDocMouseDown)
+    return () => document.removeEventListener('mousedown', onDocMouseDown)
+  }, [countryOpen])
 
   const setReg = (key: keyof typeof regForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const value = e.target.value
@@ -525,37 +557,78 @@ export function AccountPage({ onNavigate, onToast, go }: AccountPageProps) {
                       <FieldError id="acc-err-telegram" msg={regErrors.telegram} />
                     </div>
 
-                    {/* 🌍 سلکتور کشور — الزامی، با جست‌وجوی زندهٔ نام کشور */}
-                    <div>
+                    {/* 🌍 فیلد ترکیبی کشور — یک فیلد: تایپ = جست‌وجو، کلیک = انتخاب */}
+                    <div ref={countryBoxRef} className="relative">
                       <label htmlFor="acc-country" className={labelCls}>
                         {c.country} *
                       </label>
                       <input
-                        type="text"
-                        value={countryQuery}
-                        onChange={(e) => setCountryQuery(e.target.value)}
-                        className={`${inputCls} mb-2`}
-                        placeholder={c.countrySearch}
-                        aria-label={c.countrySearch}
-                        autoComplete="off"
-                      />
-                      <select
                         id="acc-country"
-                        required
-                        value={regForm.country}
-                        onChange={setReg('country')}
-                        className={`${inputCls} appearance-none ${regForm.country ? '' : 'text-brown-light/60'}`}
+                        type="text"
+                        autoComplete="off"
+                        role="combobox"
+                        aria-expanded={countryOpen}
+                        aria-controls="acc-country-list"
+                        value={countryQuery ?? selectedCountryDisplay}
+                        onChange={(e) => {
+                          const v = e.target.value
+                          setCountryQuery(v)
+                          setCountryOpen(true)
+                          if (selectedCountry && v !== selectedCountryDisplay) {
+                            setRegForm((f) => ({ ...f, country: '' }))
+                          }
+                        }}
+                        onFocus={() => setCountryOpen(true)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Escape') {
+                            setCountryOpen(false)
+                            setCountryQuery(null)
+                          } else if (e.key === 'Enter' && countryOpen) {
+                            e.preventDefault()
+                            const target =
+                              filteredCountries.find(
+                                (co) => co.name.toLowerCase() === (countryQuery ?? '').trim().toLowerCase()
+                              ) ?? filteredCountries[0]
+                            if (target) pickCountry(target.code)
+                          }
+                        }}
+                        className={`${inputCls} pr-10`}
+                        placeholder={c.countryPlaceholder}
                         {...errProps('country')}
-                      >
-                        <option value="" disabled>
-                          {c.countryPlaceholder}
-                        </option>
-                        {filteredCountries.map((co) => (
-                          <option key={co.code} value={co.code}>
-                            {flagFromCode(co.code)} {co.name}
-                          </option>
-                        ))}
-                      </select>
+                      />
+                      <ChevronDown
+                        className={`w-4 h-4 text-brown-light pointer-events-none absolute right-3.5 top-[52px] transition-transform ${
+                          countryOpen ? 'rotate-180' : ''
+                        }`}
+                        aria-hidden="true"
+                      />
+                      {countryOpen && (
+                        <ul
+                          id="acc-country-list"
+                          role="listbox"
+                          className="absolute z-30 mt-1 w-full max-h-60 overflow-auto rounded-xl border border-sage-light/40 bg-white shadow-lg py-1"
+                        >
+                          {filteredCountries.length === 0 ? (
+                            <li className="px-4 py-2.5 text-sm text-brown-light">No match</li>
+                          ) : (
+                            filteredCountries.map((co) => (
+                              <li key={co.code} role="option" aria-selected={regForm.country === co.code}>
+                                <button
+                                  type="button"
+                                  onClick={() => pickCountry(co.code)}
+                                  className={`w-full text-left px-4 py-2.5 text-sm cursor-pointer transition-colors ${
+                                    regForm.country === co.code
+                                      ? 'bg-sage-light/50 text-brown-dark font-semibold'
+                                      : 'text-brown hover:bg-sage-light/30'
+                                  }`}
+                                >
+                                  {flagFromCode(co.code)} {co.name}
+                                </button>
+                              </li>
+                            ))
+                          )}
+                        </ul>
+                      )}
                       <FieldError id="acc-err-country" msg={regErrors.country} />
                     </div>
 
