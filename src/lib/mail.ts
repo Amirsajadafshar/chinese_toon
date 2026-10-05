@@ -105,29 +105,41 @@ export async function sendPasswordResetCode(
   }
 
   try {
-    const res = await fetch(RESEND_ENDPOINT, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        from,
-        to: [to],
-        subject: `Your Chinese Toon verification code: ${code}`,
-        html: brandHtml(code, minutes),
-        text: brandText(code, minutes),
-      }),
-      signal: AbortSignal.timeout(10_000),
+    const body = JSON.stringify({
+      from,
+      to: [to],
+      subject: `Your Chinese Toon verification code: ${code}`,
+      html: brandHtml(code, minutes),
+      text: brandText(code, minutes),
     })
-    if (!res.ok) {
-      // هیچ‌وقت کلید یا بدنهٔ کامل پاسخ (که ممکن است sensitive باشد) لاگ نمی‌شود
-      console.error(`[mail] provider rejected the send (status ${res.status})`)
-      return { sent: false, provider: 'resend' }
+
+    // یک تلاش دوباره فقط برای خطاهای گذرا (تایم‌اوت/شبکه) — خطای پاسخِ
+    // ارائه‌دهنده (۴xx/۵xx مثل کلید نامعتبر) retry نمی‌شود چون قطعی است.
+    let lastError = ''
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const res = await fetch(RESEND_ENDPOINT, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body,
+          signal: AbortSignal.timeout(10_000),
+        })
+        if (res.ok) return { sent: true, provider: 'resend' }
+        // هیچ‌وقت کلید یا بدنهٔ کامل پاسخ (که ممکن است sensitive باشد) لاگ نمی‌شود
+        console.error(`[mail] provider rejected the send (status ${res.status})`)
+        return { sent: false, provider: 'resend' }
+      } catch (e) {
+        lastError = e instanceof Error ? e.message : String(e)
+        if (attempt < 2) await new Promise((r) => setTimeout(r, 1500))
+      }
     }
-    return { sent: true, provider: 'resend' }
+    console.error('[mail] provider request failed:', lastError)
+    return { sent: false, provider: 'resend' }
   } catch (e) {
-    console.error('[mail] provider request failed:', e instanceof Error ? e.message : e)
+    console.error('[mail] could not build/send the email:', e instanceof Error ? e.message : e)
     return { sent: false, provider: 'resend' }
   }
 }
