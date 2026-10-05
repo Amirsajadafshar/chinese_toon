@@ -118,10 +118,13 @@ export function AccountPage({ onNavigate, onToast, go }: AccountPageProps) {
   const [regError, setRegError] = useState('')
   const [regSending, setRegSending] = useState(false)
 
-  // 🎂 سقف تاریخ تولد = امروز (بعد از mount ست می‌شود تا hydration-mismatch نداشته باشیم)
+  // 🎂 سقف تاریخ تولد = ۵ سال پیش (حداقل سن ۵ سال) — بعد از mount ست می‌شود
+  // تا hydration-mismatch نداشته باشیم
   const [maxDob, setMaxDob] = useState('')
   useEffect(() => {
-    setMaxDob(new Date().toISOString().slice(0, 10))
+    const d = new Date()
+    d.setFullYear(d.getFullYear() - 5)
+    setMaxDob(d.toISOString().slice(0, 10))
   }, [])
 
   // 🔑 فرم ورود
@@ -175,10 +178,11 @@ export function AccountPage({ onNavigate, onToast, go }: AccountPageProps) {
     else if (!EMAIL_RE.test(regForm.email.trim())) errs.email = 'Please enter a valid email address'
     if (regForm.password.length < 8) errs.password = 'Password must be at least 8 characters'
     if (regForm.confirmPassword !== regForm.password) errs.confirmPassword = 'Passwords do not match'
-    // 🎂 تاریخ تولد اجباری — همان قواعد سرور (YYYY-MM-DD، نه آینده، نه قبل از ۱۹۰۰)
+    // 🎂 تاریخ تولد اجباری — همان قواعد سرور (YYYY-MM-DD، حداقل ۵ سال، نه قبل از ۱۹۰۰)
     if (!regForm.dob) errs.dob = 'Date of birth is required'
     else if (!/^\d{4}-\d{2}-\d{2}$/.test(regForm.dob)) errs.dob = 'Please enter a valid date of birth'
-    else if ((maxDob && regForm.dob > maxDob) || regForm.dob < '1900-01-01') errs.dob = 'Please enter a valid date of birth'
+    else if ((maxDob && regForm.dob > maxDob) || regForm.dob < '1900-01-01')
+      errs.dob = 'You must be at least 5 years old to create an account'
     if (!regForm.country) errs.country = 'Please select your country'
 
     if (Object.keys(errs).length > 0) {
@@ -226,7 +230,11 @@ export function AccountPage({ onNavigate, onToast, go }: AccountPageProps) {
         const data = result.data as { error?: string; errors?: Record<string, string>; ref?: string }
         if (data.errors && typeof data.errors === 'object' && Object.keys(data.errors).length > 0) {
           setRegErrors((prev) => ({ ...prev, ...data.errors }))
-          setRegError(data.error ?? '')
+          // بنر عمومیِ «فیلدها را درست کنید» با خطاهای زیر فیلدها تکرار می‌شود —
+          // فقط پیام‌های خاص (مثل ایمیل تکراری) در کادر پایین نشان داده می‌شود.
+          setRegError(
+            data.error && data.error !== 'Please fix the highlighted fields' ? data.error : ''
+          )
         } else {
           // 🆔 فاز ۶۳ — کد رهگیری خطا در پیام نمایش داده می‌شود تا قابل گزارش باشد
           const base = data.error || result.message

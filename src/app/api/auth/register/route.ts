@@ -81,7 +81,7 @@ export async function POST(req: NextRequest) {
   const phone = phoneRaw ? sanitizePhone(phoneRaw) : null
   if (phoneRaw && !phone) errors.phone = 'Invalid phone number'
 
-  // 🎂 تاریخ تولد اجباری است — YYYY-MM-DD، نه آینده، نه قبل از ۱۹۰۰
+  // 🎂 تاریخ تولد اجباری است — YYYY-MM-DD، حداقل ۵ سال سن، نه قبل از ۱۹۰۰
   let dateOfBirth: Date | null = null
   if (!dobRaw) {
     errors.dateOfBirth = 'Date of birth is required'
@@ -89,8 +89,10 @@ export async function POST(req: NextRequest) {
     errors.dateOfBirth = 'Please enter a valid date of birth'
   } else {
     const d = new Date(`${dobRaw}T00:00:00Z`)
-    if (Number.isNaN(d.getTime()) || d.getTime() > Date.now() || d.getUTCFullYear() < 1900) {
-      errors.dateOfBirth = 'Please enter a valid date of birth'
+    const fiveYearsAgo = new Date()
+    fiveYearsAgo.setFullYear(fiveYearsAgo.getFullYear() - 5)
+    if (Number.isNaN(d.getTime()) || d.getTime() > fiveYearsAgo.getTime() || d.getUTCFullYear() < 1900) {
+      errors.dateOfBirth = 'You must be at least 5 years old to create an account'
     } else {
       dateOfBirth = d
     }
