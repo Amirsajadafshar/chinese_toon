@@ -87,7 +87,6 @@ export const COUNTRIES: Country[] = [
   { code: 'IR', name: 'Iran', dial: '98' },
   { code: 'IQ', name: 'Iraq', dial: '964' },
   { code: 'IE', name: 'Ireland', dial: '353' },
-  { code: 'IL', name: 'Israel', dial: '972' },
   { code: 'IT', name: 'Italy', dial: '39' },
   { code: 'JM', name: 'Jamaica', dial: '1' },
   { code: 'JP', name: 'Japan', dial: '81' },
