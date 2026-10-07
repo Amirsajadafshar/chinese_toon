@@ -15,6 +15,12 @@ import {
   Globe,
 } from 'lucide-react'
 import { StatsBar } from '../StatsBar'
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from '@/components/ui/accordion'
 import { HomeBlogSection } from '../HomeBlogSection'
 import { WordOfDay } from '../WordOfDay'
 import { HomeSectionNav } from '../HomeSectionNav'
@@ -232,6 +238,16 @@ export function HomePage({ onNavigate }: HomePageProps) {
               >
                 {c.hero.secondaryButton}
               </button>
+            </div>
+            {/* 📊 ردیف اعتماد زیر دکمه‌ها — عدد کلیدی، سبک سایت‌های پرمیوم */}
+            <div className="mt-10 pt-7 border-t border-brown/10 flex flex-wrap gap-x-10 gap-y-4">
+              {c.trust.items.slice(0, 3).map((item, i) => (
+                <div key={i} className="flex items-center gap-2.5">
+                  <span className="w-2 h-2 rounded-full bg-sage-dark flex-shrink-0" aria-hidden="true"></span>
+                  <p className="text-sm font-semibold text-brown-dark">{item.title}</p>
+                </div>
+              ))}
+              <p className="text-sm text-brown-light">{c.hero.statsNote}</p>
             </div>
           </div>
         </div>
@@ -454,6 +470,45 @@ export function HomePage({ onNavigate }: HomePageProps) {
                 </div>
               )
             })}
+          </div>
+        </div>
+      </section>
+
+      {/* ================= سؤالات متداول (FAQ) ================= */}
+      <section id="faq" className="py-20 bg-cream relative overflow-hidden scroll-mt-44">
+        <CurveDivider fill="var(--color-sec-sage)" />
+        <div className="char-bg top-10 right-[5%]" style={{ fontSize: '210px', opacity: 0.04 }} aria-hidden="true">
+          问
+        </div>
+        <div className="max-w-3xl mx-auto px-6 relative">
+          <div className="text-center mb-12 scroll-animate">
+            <span className="inline-block text-xs font-semibold uppercase tracking-widest text-sage-dark mb-3">
+              FAQ · 常见问题
+            </span>
+            <h2 className="text-3xl md:text-4xl font-bold text-brown-dark mb-4">
+              Frequently Asked Questions
+            </h2>
+            <p className="text-brown-light">{siteContent.support.faq.subtitle}</p>
+          </div>
+          <Accordion type="single" collapsible className="scroll-animate">
+            {siteContent.support.faq.items.slice(0, 6).map((item, i) => (
+              <AccordionItem key={i} value={`faq-${i}`} className="border-sage-light/40">
+                <AccordionTrigger className="text-left text-base font-semibold text-brown-dark hover:text-sage-dark hover:no-underline py-5">
+                  {item.question}
+                </AccordionTrigger>
+                <AccordionContent className="text-sm text-brown-light leading-relaxed">
+                  {item.answer}
+                </AccordionContent>
+              </AccordionItem>
+            ))}
+          </Accordion>
+          <div className="text-center mt-10 scroll-animate">
+            <button
+              onClick={() => onNavigate('support')}
+              className="btn-lift bg-white border-2 border-sage/40 text-brown-dark px-8 py-3.5 rounded-full text-sm font-semibold hover:border-sage hover:bg-sage/5 active:scale-[0.98] transition-all cursor-pointer"
+            >
+              More questions? Contact us
+            </button>
           </div>
         </div>
       </section>

@@ -57,6 +57,8 @@ export const siteContent = {
         "Learn Mandarin Chinese through engaging content and practical, teacher-led classes.", // توضیح زیر تیتر
       primaryButton: "Join a Class", // دکمهٔ اصلی
       secondaryButton: "Explore Classes", // دکمهٔ ثانویه
+      // 📊 یادداشت کوچک انتهای ردیف اعتماد هیرو
+      statsNote: "First trial lesson is free!",
       // 🌿 تصویر سمت راست هیرو حالا «نشان برند» است: بازآفرینی وکتوری لوگوی
       // شاخهٔ درخت تُون در کامپوننت src/components/site/ToonBranch.tsx
       // (برگ‌ها، خوشهٔ توت و گل‌های سفید — دقیقاً با رنگ‌های خود لوگو).
@@ -112,6 +114,7 @@ export const siteContent = {
       { id: "classes", label: "Classes" },
       { id: "hsk", label: "HSK Path" },
       { id: "free", label: "Free Content" },
+      { id: "faq", label: "FAQ" },
       { id: "reviews", label: "Reviews" },
       { id: "word", label: "Word of Day" },
       { id: "blog", label: "Blog" },

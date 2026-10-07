@@ -107,21 +107,21 @@ export function Header({ activePage }: HeaderProps) {
           {/* 🚫 فاز ۶۲ — دکمهٔ CTA هدر به درخواست مالک حذف شده است؛
               ورود به ثبت‌نام از کلاس‌ها/صفحهٔ حساب ادامه دارد */}
 
-          {/* 👤 دکمهٔ حساب کاربری — کنار کلید شب/روز؛ با ورود کاربر، نام کوچکش کنار آیکون می‌آید */}
+          {/* 👤 دکمهٔ ورود/حساب — بزرگ و برچسب‌دار؛ مهمان: «Sign In»، کاربر: نامش */}
           <button
             onClick={goAccount}
-            aria-label="Account"
+            aria-label={user ? 'Account' : 'Sign in'}
             title={user ? `${user.firstName} ${user.lastName}` : 'Sign in'}
-            className={`h-10 mr-1 flex items-center rounded-xl bg-white/70 border border-sage-light/40 text-brown hover:text-sage-dark hover:border-sage transition-all cursor-pointer flex-shrink-0 ${
-              user ? 'gap-1.5 pl-2.5 pr-3' : 'w-10 justify-center'
+            className={`mr-1 flex items-center rounded-full transition-all cursor-pointer flex-shrink-0 h-11 ${
+              user
+                ? 'gap-2 pl-3 pr-4 bg-white/80 border border-sage-light/50 text-brown hover:border-sage hover:text-sage-dark'
+                : 'gap-2 px-5 bg-sage text-brown-dark text-sm font-bold border-2 border-sage hover:bg-sage-dark hover:shadow-[0_6px_18px_rgba(141,181,133,0.45)]'
             }`}
           >
-            <UserRound className="w-5 h-5" aria-hidden="true" />
-            {user && (
-              <span className="hidden sm:inline text-xs font-semibold max-w-[88px] truncate">
-                {user.firstName}
-              </span>
-            )}
+            <UserRound className={user ? 'w-5 h-5' : 'w-[18px] h-[18px]'} aria-hidden="true" />
+            <span className={user ? 'hidden sm:inline text-sm font-semibold max-w-[96px] truncate' : 'hidden sm:inline'}>
+              {user ? user.firstName : 'Sign In'}
+            </span>
           </button>
 
           {/* 🌙 کلید شب/روز — در دسکتاپ و موبایل */}
@@ -200,16 +200,16 @@ export function Header({ activePage }: HeaderProps) {
                 {item.label}
               </Link>
             ))}
-            {/* 👤 حساب کاربری — ورود برای مهمان، پروفایل برای کاربر واردشده */}
+            {/* 👤 حساب کاربری — مهمان: دکمهٔ بزرگ Sign In */}
             <button
               onClick={goAccount}
-              className={`text-lg font-semibold text-left py-3 px-4 rounded-xl hover:bg-sage-light/10 transition-colors cursor-pointer flex items-center gap-2.5 ${
+              className={`text-left py-3 px-4 rounded-xl transition-colors cursor-pointer flex items-center gap-2.5 ${
                 activePage === 'account' ? 'text-sage-dark' : 'text-brown'
-              }`}
+              } ${user ? 'hover:bg-sage-light/10' : 'mt-4 bg-sage text-brown-dark font-bold justify-center'}`}
             >
               <UserRound className="w-5 h-5 flex-shrink-0" aria-hidden="true" />
               <span className="min-w-0 truncate">
-                {user ? siteContent.account.profileTitle : siteContent.account.tabLogin}
+                {user ? siteContent.account.profileTitle : 'Sign In'}
               </span>
             </button>
           </nav>
