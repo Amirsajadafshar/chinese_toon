@@ -831,3 +831,47 @@ svg {
 }
 
 /* css touch 1789386722 */
+
+/* =====================================================================
+   🏮 فاز بازطراحی صفحهٔ خانه — بخش «مسیر HSK»
+   همهٔ انیمیشن‌ها فقط transform/opacity هستند (GPU-friendly) و
+   با prefers-reduced-motion خاموش می‌شوند.
+   ===================================================================== */
+
+/* 🃏 ورود چیپ/نشان — پرش نرم با کمی چرخش */
+@keyframes ct-chip-in {
+  0% { opacity: 0; transform: translateY(18px) scale(0.8) rotate(-4deg); }
+  70% { opacity: 1; transform: translateY(-3px) scale(1.04) rotate(1deg); }
+  100% { opacity: 1; transform: translateY(0) scale(1) rotate(0deg); }
+}
+.ct-chip-in { animation: ct-chip-in 0.65s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+/* 🏬 ورود ایستگاه‌های مسیر — از پایین با فید */
+@keyframes ct-scene-in {
+  from { opacity: 0; transform: translateY(46px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.ct-scene-in { animation: ct-scene-in 0.7s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+/* 🖌️ کشیده‌شدن مسیر HSK هنگام اسکرول */
+.ct-path-draw {
+  stroke-dasharray: var(--path-len, 1200);
+  stroke-dashoffset: var(--path-len, 1200);
+  transition: stroke-dashoffset 2.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.ct-path-visible .ct-path-draw {
+  stroke-dashoffset: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ct-chip-in,
+  .ct-scene-in {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+  .ct-path-draw {
+    transition: none;
+    stroke-dashoffset: 0;
+  }
+}

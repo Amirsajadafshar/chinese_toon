@@ -22,6 +22,7 @@ import { HomeReviewsCarousel } from '../HomeReviewsCarousel'
 import { HeroScene } from '../HeroScene'
 import { CurveDivider } from '../CurveDivider'
 import { Leaflet } from '../ToonBranch'
+import { HskPath } from '../home/HskPath'
 import { siteContent, PageKey } from '@/content/site-content'
 import { appNavigate } from '@/lib/nav'
 
@@ -220,14 +221,14 @@ export function HomePage({ onNavigate }: HomePageProps) {
             <div className="flex flex-wrap gap-4">
               <button
                 onClick={() => onNavigate('register')}
-                className="bg-sage text-brown-dark px-8 py-4 rounded-full text-base font-semibold flex items-center gap-2 hover:bg-sage-dark hover:-translate-y-px hover:shadow-[0_4px_16px_rgba(168,201,160,0.4)] transition-all cursor-pointer"
+                className="btn-lift bg-sage text-brown-dark px-8 py-4 rounded-full text-base font-semibold flex items-center gap-2 hover:bg-sage-dark hover:shadow-[0_8px_24px_rgba(141,181,133,0.45)] active:scale-[0.98] transition-all cursor-pointer"
               >
                 {c.hero.primaryButton}
-                <ArrowRight className="w-[18px] h-[18px]" />
+                <ArrowRight className="w-[18px] h-[18px]" aria-hidden="true" />
               </button>
               <button
                 onClick={() => onNavigate('classes')}
-                className="bg-white border-2 border-sage/40 text-brown-dark px-8 py-4 rounded-full text-base font-medium hover:border-sage hover:bg-sage/5 transition-all cursor-pointer"
+                className="btn-lift bg-white border-2 border-sage/40 text-brown-dark px-8 py-4 rounded-full text-base font-medium hover:border-sage hover:bg-sage/5 active:scale-[0.98] transition-all cursor-pointer"
               >
                 {c.hero.secondaryButton}
               </button>
@@ -236,7 +237,7 @@ export function HomePage({ onNavigate }: HomePageProps) {
         </div>
       </section>
 
-            {/* 🧭 ناوبری بخش‌های صفحه — با اسکرول، خط زیر آیتم فعال حرکت می‌کند */}
+      {/* 🧭 ناوبری بخش‌های صفحه — با اسکرول، خط زیر آیتم فعال حرکت می‌کند */}
       <HomeSectionNav />
 
       {/* ================= نوار آمار ================= */}
@@ -353,6 +354,9 @@ export function HomePage({ onNavigate }: HomePageProps) {
           </div>
         </div>
       </section>
+
+      {/* ================= مسیر HSK (HSK 1 → 4) ================= */}
+      <HskPath onNavigate={onNavigate} />
 
       {/* ================= محتوای رایگان ================= */}
       <section id="free" className="py-20 bg-cream-dark relative overflow-hidden scroll-mt-44">
@@ -494,14 +498,14 @@ export function HomePage({ onNavigate }: HomePageProps) {
           <div className="flex flex-wrap justify-center gap-4">
             <button
               onClick={() => onNavigate('register')}
-              className="bg-[#FFF7E8] text-[#3D352E] px-8 py-4 rounded-full text-base font-semibold flex items-center gap-2 hover:bg-[#F7E5B0] hover:-translate-y-px hover:shadow-[0_6px_20px_rgba(61,53,46,0.25)] transition-all cursor-pointer"
+              className="btn-lift bg-[#FFF7E8] text-[#3D352E] px-8 py-4 rounded-full text-base font-semibold flex items-center gap-2 hover:bg-[#F7E5B0] hover:shadow-[0_8px_24px_rgba(61,53,46,0.25)] active:scale-[0.98] transition-all cursor-pointer"
             >
               {c.finalCta.primaryButton}
-              <ArrowRight className="w-[18px] h-[18px]" />
+              <ArrowRight className="w-[18px] h-[18px]" aria-hidden="true" />
             </button>
             <button
               onClick={() => onNavigate('classes')}
-              className="border-2 border-[#FFF7E8]/60 text-[#FFF7E8] px-8 py-4 rounded-full text-base font-medium hover:bg-[#FFF7E8]/10 hover:border-[#FFF7E8] transition-all cursor-pointer"
+              className="btn-lift border-2 border-[#FFF7E8]/60 text-[#FFF7E8] px-8 py-4 rounded-full text-base font-medium hover:bg-[#FFF7E8]/10 hover:border-[#FFF7E8] active:scale-[0.98] transition-all cursor-pointer"
             >
               {c.finalCta.secondaryButton}
             </button>

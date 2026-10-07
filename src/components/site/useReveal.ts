@@ -6,10 +6,11 @@ import { useEffect } from 'react'
  * اتصال انیمیشن‌های ظاهرشدن هنگام اسکرول (scroll-animate).
  * هر بار که صفحهٔ فعال عوض شود، دوباره فراخوانی کنید.
  *
- * 🔁 علاوه بر اسکن اولیه، یک MutationObserver هم می‌گذارد تا هر
- * .scroll-animate که بعداً (مثلاً بعد از لود شدن داده از سرور) به DOM
- * اضافه شود هم مشاهده شود — وگرنه کارت‌های async (کاروسل نظرات،
- * Testimonials، ...) برای همیشه شفاف می‌مانند.
+ * 🔁 MutationObserver دو کار می‌کند:
+ *  • هر .scroll-animate که بعداً به DOM اضافه شود (دادهٔ async) مشاهده می‌شود
+ *  • اگر رندر مجدد React کلاس visible را از className پاک کند (className
+ *    از JSX بازنویسی می‌شود)، همان عنصر دوباره مشاهده و revealed می‌شود —
+ *    وگرنه بخش‌های پایین صفحه برای همیشه شفاف می‌مانند
  */
 export function useReveal(dep: unknown) {
   useEffect(() => {
@@ -25,22 +26,24 @@ export function useReveal(dep: unknown) {
       { threshold: 0.1, rootMargin: '0px 0px -50px 0px' }
     )
 
-    const seen = new WeakSet<Element>()
     const scan = () => {
       document.querySelectorAll('.scroll-animate:not(.visible)').forEach((el) => {
-        if (!seen.has(el)) {
-          seen.add(el)
-          observer.observe(el)
-        }
+        // observe روی عنصرِ تحت‌مشاهدهٔ تکراری no-op است؛ فراخوانی همیشه بی‌خطر
+        observer.observe(el)
       })
     }
 
-    // تغییرهای DOM را تماشا می‌کنیم تا عناصر جدید هم وارد مشاهده شوند
+    // تغییرهای DOM (افزودن عنصر یا پاک‌شدن کلاس visible) را تماشا می‌کنیم
     const mo = new MutationObserver(() => scan())
 
     const timer = setTimeout(() => {
       scan()
-      mo.observe(document.body, { childList: true, subtree: true })
+      mo.observe(document.body, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['class'],
+      })
     }, 120)
 
     return () => {

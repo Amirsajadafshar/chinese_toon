@@ -57,13 +57,18 @@ export function Header({ activePage }: HeaderProps) {
       <header
         id="header"
         className={`fixed top-0 left-0 right-0 z-50 bg-cream/90 backdrop-blur-md border-b border-sage-light/30 transition-all duration-300 ${
-          scrolled ? 'shadow-[0_4px_20px_rgba(91,81,69,0.06)]' : 'shadow-none'
+          scrolled ? 'shadow-[0_4px_20px_rgba(91,81,69,0.08)]' : 'shadow-none'
         }`}
       >
         {/* 📣 نوار اعلان — بالای نوار منو، از فایل محتوا */}
         <AnnouncementBar />
 
-        <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
+        {/* 📐 با اسکرول، نوار فشرده‌تر و مات‌تر می‌شود */}
+        <div
+          className={`max-w-7xl mx-auto px-6 flex items-center justify-between transition-all duration-300 ${
+            scrolled ? 'h-14' : 'h-20'
+          }`}
+        >
           {/* لوگو — نشان شاخهٔ درخت تُون + نام برند */}
           <Link
             href="/"
@@ -74,7 +79,7 @@ export function Header({ activePage }: HeaderProps) {
             <span className="w-10 h-10 bg-white rounded-xl border border-sage-light/50 shadow-sm flex items-center justify-center group-hover:scale-105 group-hover:rotate-3 transition-transform">
               <ToonMark className="w-7 h-7" />
             </span>
-            <span className="text-left leading-none">
+            <span className={`text-left leading-none transition-all duration-300 ${scrolled ? 'lg:block' : 'block'}`}>
               <span className="block text-lg font-bold tracking-wide text-leaf-dark">
                 CHINESE TOON
               </span>
@@ -99,11 +104,14 @@ export function Header({ activePage }: HeaderProps) {
             ))}
           </nav>
 
+          {/* 🚫 فاز ۶۲ — دکمهٔ CTA هدر به درخواست مالک حذف شده است؛
+              ورود به ثبت‌نام از کلاس‌ها/صفحهٔ حساب ادامه دارد */}
+
           {/* 👤 دکمهٔ حساب کاربری — کنار کلید شب/روز؛ با ورود کاربر، نام کوچکش کنار آیکون می‌آید */}
           <button
             onClick={goAccount}
             aria-label="Account"
-            title={user ? `${user.firstName} ${user.lastName}` : 'Account'}
+            title={user ? `${user.firstName} ${user.lastName}` : 'Sign in'}
             className={`h-10 mr-1 flex items-center rounded-xl bg-white/70 border border-sage-light/40 text-brown hover:text-sage-dark hover:border-sage transition-all cursor-pointer flex-shrink-0 ${
               user ? 'gap-1.5 pl-2.5 pr-3' : 'w-10 justify-center'
             }`}
@@ -126,9 +134,6 @@ export function Header({ activePage }: HeaderProps) {
             <Sun className="hidden dark:block w-5 h-5" aria-hidden="true" />
             <Moon className="block dark:hidden w-5 h-5" aria-hidden="true" />
           </button>
-
-          {/* 🚫 فاز ۶۲ — دکمهٔ «Join a Class» هدر به درخواست مالک حذف شد؛
-              ورود به ثبت‌نام از کلاس‌ها/صفحهٔ حساب ادامه دارد */}
 
           {/* دکمه منوی موبایل */}
           <button

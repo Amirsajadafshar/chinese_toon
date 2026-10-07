@@ -62,6 +62,46 @@ export const siteContent = {
       // (برگ‌ها، خوشهٔ توت و گل‌های سفید — دقیقاً با رنگ‌های خود لوگو).
     },
     // -------------------------------------------------------------
+    //  🏮 مسیر HSK — نمایش پیشرفت HSK 1 تا HSK 4 به‌صورت یک مسیر چراغانی
+    //  👇 levels را ویرایش کنید؛ count = تعداد تقریبی واژه‌های هر سطح
+    // -------------------------------------------------------------
+    hskPath: {
+      eyebrow: "Your Path · 汉语水平考试",
+      title: "From nǐ hǎo to HSK 4",
+      subtitle:
+        "A clear road from your first word to confident, exam-ready Chinese. Each level builds on the last — at your pace, with teachers beside you.",
+      startLabel: "Start here",
+      flagLabel: "Exam ready",
+      levels: [
+        {
+          level: "HSK 1",
+          count: "150 words",
+          title: "First steps",
+          text: "Greetings, numbers and everyday basics — enough to introduce yourself and order your first meal.",
+        },
+        {
+          level: "HSK 2",
+          count: "300 words",
+          title: "Finding your feet",
+          text: "Small talk, shopping and getting around town. Simple conversations start to feel natural.",
+        },
+        {
+          level: "HSK 3",
+          count: "600 words",
+          title: "Real conversations",
+          text: "Opinions, plans and stories. You can handle travel, work small talk and read short passages.",
+        },
+        {
+          level: "HSK 4",
+          count: "1,200 words",
+          title: "Confident Chinese",
+          text: "Discuss a wide range of topics fluently — the level universities and employers recognise.",
+        },
+      ],
+      ctaLabel: "Find your level",
+      ctaButton: "Explore Classes",
+    },
+    // -------------------------------------------------------------
     //  🧭 ناوبری بخش‌های صفحهٔ خانه (زیر منوی اصلی، چسبان)
     //  با اسکرول، خط زیر آیتم فعال حرکت می‌کند؛ با کلیک، صفحه به همان بخش می‌رود.
     //  👇 برای کم/زیاد کردن آیتم‌ها این لیست را ویرایش کنید
@@ -70,6 +110,7 @@ export const siteContent = {
     sectionNav: [
       { id: "why", label: "Why Us" },
       { id: "classes", label: "Classes" },
+      { id: "hsk", label: "HSK Path" },
       { id: "free", label: "Free Content" },
       { id: "reviews", label: "Reviews" },
       { id: "word", label: "Word of Day" },
