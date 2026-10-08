@@ -81,82 +81,105 @@ function DriftLeaf({
 }
 
 /* ---------------- 🌳 درخت تُون — قهرمان صحنه ---------------- */
-// تنهٔ سبز (مثل خطوط لوگو) + تاج بادبزنی از برگ‌های مرکب + زنگاری سرشاخه +
-// توت و گل سفید + تابلوی چوبی «香椿» پای درخت + بوته‌ها و علف‌ها.
+// تنهٔ منحنیِ باریک‌شونده + سه شاخه که هر کدام دقیقاً «داخل» خوشهٔ برگ
+// تمام می‌شوند (شاخه‌ها تا مرکز تاج برگ می‌روند تا برگ‌ها هرگز جدا از
+// درخت دیده نشوند) + تاج پرپشت از دایره‌های سیج + برگ‌های مرکب برند
+// که از دل تاج بیرون می‌زنند + توت، گل سفید و تابلوی آویز «香椿».
 function ToonTree({ className = '' }: { className?: string }) {
-  const fronds: { x: number; y: number; rot: number; len: number; mode: LeafMode; dur?: number; delay?: number }[] = [
-    // خوشهٔ شاخهٔ چپ
-    { x: 196, y: 332, rot: 196, len: 100, mode: 'outline', dur: 7.2, delay: 0.4 },
-    { x: 202, y: 324, rot: 224, len: 92, mode: 'sage', dur: 6.6, delay: 0.9 },
-    // تاج مرکزی — بادبزن دور نوک تنه
-    { x: 272, y: 244, rot: 252, len: 118, mode: 'outline', dur: 7.0, delay: 0.2 },
-    { x: 268, y: 236, rot: 268, len: 128, mode: 'outline', dur: 7.6, delay: 0 },
-    { x: 272, y: 228, rot: 285, len: 122, mode: 'sage', dur: 6.8, delay: 0.6 },
-    { x: 278, y: 222, rot: 303, len: 114, mode: 'outline', dur: 7.3, delay: 0.1 },
-    { x: 283, y: 216, rot: 320, len: 102, mode: 'rust', dur: 6.5, delay: 1.1 },
-    { x: 288, y: 212, rot: 337, len: 92, mode: 'rust', dur: 6.9, delay: 0.7 },
-    // نوک تنه
-    { x: 276, y: 168, rot: 274, len: 106, mode: 'outline', dur: 7.8, delay: 0.3 },
-    // خوشهٔ شاخهٔ راست
-    { x: 362, y: 292, rot: 18, len: 104, mode: 'outline', dur: 7.1, delay: 0.5 },
-    { x: 356, y: 300, rot: 46, len: 90, mode: 'sage', dur: 6.4, delay: 1.3 },
-    // برگ‌های میانی — پرپشت‌کردن تنه و فاصلهٔ تاج تا شاخه‌ها
-    { x: 296, y: 330, rot: 52, len: 86, mode: 'outline', dur: 7.0, delay: 0.9 },
-    { x: 252, y: 306, rot: 236, len: 84, mode: 'sage', dur: 6.7, delay: 1.4 },
-    { x: 286, y: 250, rot: 226, len: 90, mode: 'outline', dur: 7.4, delay: 1.7 },
-  ]
+  // خوشهٔ برگ: چند دایرهٔ روی‌هم + برگ‌های مرکب که پایه‌شان داخل خوشه است
+  const Cluster = ({ x, y, r, fronds }: { x: number; y: number; r: number; fronds: { rot: number; len: number; mode?: LeafMode }[] }) => (
+    <g>
+      {fronds.map((f, i) => (
+        <Frond key={i} x={x} y={y} rot={f.rot} len={f.len} mode={f.mode ?? 'outline'} dur={6 + (i % 3)} delay={i * 0.5} />
+      ))}
+      <circle cx={x} cy={y} r={r} fill={SAGE_FILL} stroke={LEAF} strokeWidth="2.4" />
+    </g>
+  )
+
   return (
-    <svg viewBox="0 0 520 600" className={className} fill="none" aria-hidden="true">
-      {/* تابلوی چوبی برند — قبل از تنه تا تنه کمی رویش بیفتد */}
+    <svg viewBox="0 0 520 620" className={className} fill="none" aria-hidden="true">
+      {/* سایهٔ نرم زیر درخت */}
+      <ellipse cx="290" cy="606" rx="130" ry="14" fill={LEAF} opacity="0.08" />
+
+      {/* 🪧 تابلوی آویز «香椿» — با دو بند از تنه */}
       <g>
-        <rect x="214" y="484" width="10" height="98" rx="4" fill={BROWN_LIGHT} />
-        <rect x="166" y="434" width="134" height="58" rx="12" fill={CREAM} stroke={LEAF} strokeWidth="2.5" />
-        <rect x="173" y="441" width="120" height="44" rx="8" stroke={LEAF} strokeWidth="1.4" opacity="0.4" />
-        <text
-          x="233"
-          y="474"
-          textAnchor="middle"
-          fontSize="30"
-          fontWeight="700"
-          letterSpacing="6"
-          fill={LEAF_DARK}
-        >
-          香椿
-        </text>
+        <path d="M292 470 Q 268 478 246 486" stroke={BROWN_LIGHT} strokeWidth="2.4" fill="none" />
+        <path d="M292 520 Q 272 528 252 534" stroke={BROWN_LIGHT} strokeWidth="2.4" fill="none" />
+        <g className="animate-ct-wiggle" style={{ transformBox: 'fill-box', transformOrigin: '50% 0%' }}>
+          <rect x="186" y="486" width="130" height="52" rx="12" fill={CREAM} stroke={LEAF} strokeWidth="2.6" />
+          <rect x="193" y="493" width="116" height="38" rx="8" stroke={LEAF} strokeWidth="1.3" opacity="0.4" />
+          <text x="251" y="522" textAnchor="middle" fontSize="27" fontWeight="700" letterSpacing="5" fill={LEAF_DARK}>
+            香椿
+          </text>
+          <circle cx="194" cy="494" r="2.6" fill={RUST} />
+          <circle cx="308" cy="494" r="2.6" fill={RUST} />
+        </g>
       </g>
 
-      {/* تنه — دو بخش برای حس باریک‌شدن */}
-      <path d="M300 598 C 292 520, 284 452, 286 394" stroke={LEAF_DARK} strokeWidth="10" strokeLinecap="round" />
-      <path d="M286 394 C 288 342, 280 292, 272 246" stroke={LEAF} strokeWidth="6.5" strokeLinecap="round" />
-      {/* شاخه‌های اصلی */}
-      <path d="M285 394 C 312 350, 338 318, 362 294" stroke={LEAF} strokeWidth="5" strokeLinecap="round" />
-      <path d="M287 420 C 258 388, 226 358, 197 334" stroke={LEAF} strokeWidth="5" strokeLinecap="round" />
-      <path d="M272 246 C 268 212, 269 190, 277 168" stroke={LEAF} strokeWidth="4" strokeLinecap="round" />
+      {/* تنه — منحنی نرم و باریک‌شونده با ریشهٔ پهن */}
+      <path
+        d="M258 610 Q 272 596 296 594 Q 288 540 286 488 Q 284 428 286 372 Q 287 318 280 252 Q 276 216 274 186"
+        stroke={LEAF_DARK} strokeWidth="11" strokeLinecap="round"
+      />
+      <path d="M274 186 Q 273 172 277 158" stroke={LEAF} strokeWidth="7" strokeLinecap="round" />
+      {/* بافت خفیف تنه */}
+      <path d="M287 560 Q 284 500 285 440 M283 380 Q 281 330 278 280" stroke={LEAF} strokeWidth="1.6" opacity="0.35" strokeLinecap="round" />
 
-      {/* تاج — تاب‌خوردن کل گروه حول سرِ تنه */}
-      <g
-        className="animate-ct-sway"
-        style={{ transformBox: 'view-box', transformOrigin: '280px 320px', animationDuration: '9s' }}
-      >
-        {fronds.map((f, i) => (
-          <Frond key={i} {...f} leafN={f.len > 105 ? 6 : 5} />
-        ))}
-        <Berries x={348} y={266} rot={-12} />
-        <Berries x={300} y={150} rot={8} />
-        <Blossom x={372} y={248} s={0.9} />
-        <Blossom x={338} y={296} s={0.7} />
-        <Blossom x={246} y={206} s={0.8} />
+      {/* شاخه‌ها — هر شاخه تا «مرکز» خوشهٔ برگ پیش می‌رود */}
+      <path d="M285 430 C 256 400, 226 370, 197 344" stroke={LEAF} strokeWidth="5.5" strokeLinecap="round" />
+      <path d="M286 398 C 314 356, 340 324, 364 298" stroke={LEAF} strokeWidth="5.5" strokeLinecap="round" />
+      <path d="M282 344 C 268 326, 254 312, 239 298" stroke={LEAF} strokeWidth="4.5" strokeLinecap="round" />
+
+      {/* تاج و خوشه‌ها — تابِ خیلی ملایم حول سرِ تنه */}
+      <g className="animate-ct-sway" style={{ transformBox: 'view-box', transformOrigin: '272px 250px', animationDuration: '8.5s' }}>
+        {/* تاج اصلی — پرپشت از دایره‌های روی‌هم */}
+        <g stroke={LEAF} strokeWidth="2.4">
+          <circle cx="270" cy="188" r="52" fill={SAGE_FILL} />
+          <circle cx="224" cy="206" r="37" fill={SAGE_FILL} />
+          <circle cx="316" cy="206" r="38" fill={SAGE_FILL} />
+          <circle cx="252" cy="160" r="34" fill={SAGE_FILL} />
+          <circle cx="292" cy="157" r="33" fill={SAGE_FILL} />
+          <circle cx="202" cy="232" r="24" fill={SAGE_FILL} />
+          <circle cx="338" cy="234" r="23" fill={SAGE_FILL} />
+          {/* هایلایت‌های روشن روی تاج */}
+          <circle cx="258" cy="168" r="20" fill="#DCEED8" stroke="none" opacity="0.8" />
+          <circle cx="300" cy="182" r="15" fill="#DCEED8" stroke="none" opacity="0.7" />
+        </g>
+
+        {/* برگ‌های مرکب برند — پایه‌ها داخل تاج، رو به بیرون */}
+        <Frond x={252} y={178} rot={235} len={92} mode="outline" dur={6.8} delay={0.2} />
+        <Frond x={284} y={172} rot={292} len={98} mode="outline" dur={7.4} delay={0.6} />
+        <Frond x={266} y={160} rot={265} len={88} mode="sage" dur={6.4} delay={0.9} />
+        <Frond x={238} y={196} rot={208} len={78} mode="sage" dur={7.0} delay={0.4} />
+        <Frond x={300} y={192} rot={330} len={80} mode="rust" dur={6.6} delay={1.1} />
+        <Frond x={318} y={214} rot={12} len={72} mode="outline" dur={7.2} delay={0.8} />
+
+        {/* خوشهٔ شاخهٔ چپ */}
+        <Cluster x={197} y={344} r={26} fronds={[{ rot: 196, len: 62 }, { rot: 232, len: 54, mode: 'sage' }]} />
+        {/* خوشهٔ شاخهٔ راست */}
+        <Cluster x={364} y={298} r={27} fronds={[{ rot: 14, len: 64 }, { rot: 46, len: 56, mode: 'sage' }]} />
+        {/* خوشهٔ کوچک میانی */}
+        <Cluster x={239} y={298} r={20} fronds={[{ rot: 246, len: 48, mode: 'rust' }]} />
+
+        {/* توت و گل‌های سفید — لبهٔ تاج */}
+        <Berries x={330} y={158} rot={-14} />
+        <Berries x={212} y={178} rot={16} />
+        <Berries x={352} y={272} rot={30} />
+        <Blossom x={296} y={142} s={0.95} />
+        <Blossom x={236} y={150} s={0.8} />
+        <Blossom x={326} y={216} s={0.75} />
+        <Blossom x={206} y={262} s={0.65} />
       </g>
 
       {/* بوته‌های پای درخت */}
       <g>
-        <g transform="translate(118 566)">
+        <g transform="translate(120 588)">
           <circle cx="-20" cy="-2" r="18" fill={SAGE_FILL} stroke={LEAF} strokeWidth="2" />
           <circle cx="2" cy="-8" r="24" fill={SAGE_FILL} stroke={LEAF} strokeWidth="2" />
           <circle cx="24" cy="0" r="17" fill={SAGE_FILL} stroke={LEAF} strokeWidth="2" />
           <circle cx="6" cy="-24" r="3" fill={RUST} />
         </g>
-        <g transform="translate(446 578) scale(0.8)">
+        <g transform="translate(448 598) scale(0.8)">
           <circle cx="-20" cy="-2" r="18" fill={SAGE_FILL} stroke={LEAF} strokeWidth="2" />
           <circle cx="2" cy="-8" r="24" fill={SAGE_FILL} stroke={LEAF} strokeWidth="2" />
           <circle cx="24" cy="0" r="17" fill={SAGE_FILL} stroke={LEAF} strokeWidth="2" />
@@ -166,10 +189,10 @@ function ToonTree({ className = '' }: { className?: string }) {
 
       {/* علف‌های کوچک پای تنه */}
       {[
-        { x: 160, y: 590, s: 1 },
-        { x: 352, y: 594, s: 0.9 },
-        { x: 408, y: 586, s: 0.8 },
-        { x: 96, y: 584, s: 0.8 },
+        { x: 160, y: 610, s: 1 },
+        { x: 356, y: 612, s: 0.9 },
+        { x: 412, y: 604, s: 0.8 },
+        { x: 96, y: 602, s: 0.8 },
       ].map((t, i) => (
         <g key={i} transform={`translate(${t.x} ${t.y}) scale(${t.s})`} stroke={SAGE_DARK} strokeWidth="2.4" strokeLinecap="round">
           <path d="M0 0 Q -5 -13 -9 -17" />

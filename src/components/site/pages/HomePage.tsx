@@ -239,16 +239,6 @@ export function HomePage({ onNavigate }: HomePageProps) {
                 {c.hero.secondaryButton}
               </button>
             </div>
-            {/* 📊 ردیف اعتماد زیر دکمه‌ها — عدد کلیدی، سبک سایت‌های پرمیوم */}
-            <div className="mt-10 pt-7 border-t border-brown/10 flex flex-wrap gap-x-10 gap-y-4">
-              {c.trust.items.slice(0, 3).map((item, i) => (
-                <div key={i} className="flex items-center gap-2.5">
-                  <span className="w-2 h-2 rounded-full bg-sage-dark flex-shrink-0" aria-hidden="true"></span>
-                  <p className="text-sm font-semibold text-brown-dark">{item.title}</p>
-                </div>
-              ))}
-              <p className="text-sm text-brown-light">{c.hero.statsNote}</p>
-            </div>
           </div>
         </div>
       </section>
