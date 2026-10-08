@@ -615,9 +615,6 @@ export function ClassesPage({ onNavigate, initialSlug }: ClassesPageProps) {
         </svg>
         <div className="max-w-7xl mx-auto px-6 relative">
           <div className="text-center mb-12">
-            <span className="inline-block text-xs font-semibold uppercase tracking-widest text-sage-dark mb-3">
-              {c.eyebrow}
-            </span>
             <h1 className="text-3xl md:text-5xl font-bold text-brown-dark mb-4">{c.title}</h1>
             <p className="text-brown-light max-w-2xl mx-auto">{c.subtitle}</p>
           </div>

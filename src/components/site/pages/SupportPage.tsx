@@ -156,10 +156,6 @@ export function SupportPage({ onToast }: SupportPageProps) {
         </div>
         <div className="max-w-7xl mx-auto px-6 text-center">
           <div className="animate-ct-fadeInUp max-w-3xl mx-auto">
-            <span className="inline-flex items-center gap-2 bg-sage-light/40 rounded-full px-4 py-1.5 mb-6 text-xs font-semibold uppercase tracking-widest text-sage-dark">
-              <HelpCircle className="w-3.5 h-3.5" />
-              {s.eyebrow}
-            </span>
             <h1 className="text-3xl md:text-5xl font-bold text-brown-dark mb-4">{s.title}</h1>
             <p className="text-brown-light max-w-2xl mx-auto">{s.subtitle}</p>
             <p className="text-sm text-brown-light/80 mt-4 inline-flex items-center gap-1.5">

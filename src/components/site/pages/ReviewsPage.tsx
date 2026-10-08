@@ -1,6 +1,6 @@
 'use client'
 
-import { ArrowRight, MessageSquareHeart, Sparkles, Star } from 'lucide-react'
+import { ArrowRight, Sparkles, Star } from 'lucide-react'
 import { siteContent } from '@/content/site-content'
 import { CommunityReviews } from '../CommunityReviews'
 
@@ -56,10 +56,6 @@ export function ReviewsPage() {
 
         <div className="max-w-4xl mx-auto px-6 text-center">
           <div className="animate-ct-fadeInUp">
-            <div className="inline-flex items-center gap-2 bg-peach-light/40 rounded-full px-4 py-1.5 mb-6">
-              <MessageSquareHeart className="w-3.5 h-3.5 text-peach" aria-hidden="true" />
-              <span className="text-xs font-semibold text-brown">{rp.badge}</span>
-            </div>
             <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-brown-dark leading-tight mb-6">
               {rp.titleTop} <span className="text-sage-dark">{rp.titleHighlight}</span>
             </h1>

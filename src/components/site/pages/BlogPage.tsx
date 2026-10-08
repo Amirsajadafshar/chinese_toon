@@ -743,10 +743,6 @@ export function BlogPage({ slug: routeSlug = '' }: { slug?: string }) {
           <g transform="translate(3 20)"><Leaflet w={46} mode="rust" /></g>
         </svg>
         <div className="max-w-7xl mx-auto px-6 text-center relative">
-          <span className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-sage-dark mb-3">
-            <Newspaper className="w-4 h-4" />
-            {b.eyebrow}
-          </span>
           <h1 className="text-3xl md:text-5xl font-bold text-brown-dark mb-4">{b.title}</h1>
           <p className="text-brown-light max-w-2xl mx-auto">{b.subtitle}</p>
         </div>

@@ -80,14 +80,9 @@ function DriftLeaf({
   )
 }
 
-/* ---------------- 🌳 درخت تُون — قهرمان صحنه ---------------- */
-// تنهٔ منحنیِ باریک‌شونده + سه شاخه که هر کدام دقیقاً «داخل» خوشهٔ برگ
-// تمام می‌شوند (شاخه‌ها تا مرکز تاج برگ می‌روند تا برگ‌ها هرگز جدا از
-// درخت دیده نشوند) + تاج پرپشت از دایره‌های سیج + برگ‌های مرکب برند
-// که از دل تاج بیرون می‌زنند + توت، گل سفید و تابلوی آویز «香椿».
-function ToonTree({ className = '' }: { className?: string }) {
-  // خوشهٔ برگ: چند دایرهٔ روی‌هم + برگ‌های مرکب که پایه‌شان داخل خوشه است
-  const Cluster = ({ x, y, r, fronds }: { x: number; y: number; r: number; fronds: { rot: number; len: number; mode?: LeafMode }[] }) => (
+/* خوشهٔ برگ انتهای شاخه — برگ‌ها + دایرهٔ مرکزی (بیرون از درخت تعریف می‌شود) */
+function Cluster({ x, y, r, fronds }: { x: number; y: number; r: number; fronds: { rot: number; len: number; mode?: LeafMode }[] }) {
+  return (
     <g>
       {fronds.map((f, i) => (
         <Frond key={i} x={x} y={y} rot={f.rot} len={f.len} mode={f.mode ?? 'outline'} dur={6 + (i % 3)} delay={i * 0.5} />
@@ -95,7 +90,14 @@ function ToonTree({ className = '' }: { className?: string }) {
       <circle cx={x} cy={y} r={r} fill={SAGE_FILL} stroke={LEAF} strokeWidth="2.4" />
     </g>
   )
+}
 
+/* ---------------- 🌳 درخت تُون — قهرمان صحنه ---------------- */
+// تنهٔ منحنیِ باریک‌شونده + سه شاخه که هر کدام دقیقاً «داخل» خوشهٔ برگ
+// تمام می‌شوند (شاخه‌ها تا مرکز تاج برگ می‌روند تا برگ‌ها هرگز جدا از
+// درخت دیده نشوند) + تاج پرپشت از دایره‌های سیج + برگ‌های مرکب برند
+// که از دل تاج بیرون می‌زنند + توت، گل سفید و تابلوی آویز «香椿».
+function ToonTree({ className = '' }: { className?: string }) {
   return (
     <svg viewBox="0 0 520 620" className={className} fill="none" aria-hidden="true">
       {/* سایهٔ نرم زیر درخت */}
