@@ -8,7 +8,7 @@ const SITE_URL = siteContent.contact.siteUrl;
 export const metadata: Metadata = {
   title: "About — Chinese Toon",
   description:
-    "Meet the Chinese Toon team — experienced Mandarin teachers creating animated learning content and practical, teacher-led classes.",
+    "Learn about Chinese Toon — our teaching philosophy, approach, and how we create animated Mandarin learning content and practical, teacher-led classes.",
   alternates: { canonical: `${SITE_URL}/about` },
 };
 

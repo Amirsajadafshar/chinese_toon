@@ -1,6 +1,5 @@
 'use client'
 
-import { useEffect, useState } from 'react'
 import {
   Briefcase,
   Heart,
@@ -12,12 +11,8 @@ import {
   Smile,
   Sparkles,
   Mail,
-  User,
-  Languages,
-  ScrollText,
 } from 'lucide-react'
 import { InstagramIcon, TelegramIcon, WeChatIcon } from '../brand-icons'
-import { TeacherProfileModal, type TeacherSample, type TeacherProfile } from '../TeacherProfileModal'
 import { CurveDivider } from '../CurveDivider'
 import { Leaflet } from '../ToonBranch'
 import { siteContent, PageKey } from '@/content/site-content'
@@ -46,106 +41,7 @@ interface AboutPageProps {
   onNavigate: (page: PageKey) => void
 }
 
-// 👩‍🏫 شکل یکسان‌شدهٔ معلم — هم از دیتابیس و هم از فایل محتوا
-// رزومه + گواهینامه‌ها + نمونه‌های تدریس در مودال TeacherProfileModal نمایش داده می‌شوند
-type TeacherItem = TeacherProfile & { bio: string; tag: string }
-
-// پارس امن نمونه‌های تدریس از JSON دیتابیس — هر عنصر خراب به‌آرامی حذف می‌شود
-const SAMPLE_KINDS = ['video', 'audio', 'text', 'dialog'] as const
-function parseSamples(raw: unknown): TeacherSample[] {
-  if (typeof raw !== 'string') return Array.isArray(raw) ? (raw as TeacherSample[]) : []
-  try {
-    const arr = JSON.parse(raw)
-    if (!Array.isArray(arr)) return []
-    return arr.filter(
-      (s): s is TeacherSample =>
-        s && typeof s === 'object' && typeof (s as TeacherSample).title === 'string' &&
-        SAMPLE_KINDS.includes((s as TeacherSample).kind)
-    )
-  } catch {
-    return []
-  }
-}
-
 export function AboutPage({ onNavigate }: AboutPageProps) {
-  // 🗄️ معلم‌ها از دیتابیس (پنل ادمین → تب Teachers) — تا وقتی خالی باشد
-  // تیم پیش‌فرض فایل محتوا نمایش داده می‌شود
-  const [teachers, setTeachers] = useState<TeacherItem[] | null>(null)
-  // 🪟 مودال «رزومه و نمونهٔ تدریس» — معلمِ انتخاب‌شده
-  const [profileTeacher, setProfileTeacher] = useState<TeacherItem | null>(null)
-
-  useEffect(() => {
-    let cancelled = false
-    const load = () => {
-      fetch('/api/teachers')
-        .then((res) => res.json())
-        .then((data) => {
-          if (cancelled) return
-          const list: TeacherItem[] = (data.teachers ?? []).map(
-            (t: {
-              name: string
-              role: string
-              bio: string
-              tag: string
-              langs: string
-              image: string | null
-              resume?: string
-              experienceYears?: number
-              studentsTaught?: number
-              certificates?: string
-              samples?: unknown
-            }) => ({
-              name: t.name,
-              role: t.role,
-              bio: t.bio,
-              tag: t.tag,
-              langs: t.langs
-                .split(',')
-                .map((s) => s.trim())
-                .filter(Boolean),
-              image: t.image,
-              resume: t.resume ?? '',
-              experienceYears: t.experienceYears ?? 0,
-              studentsTaught: t.studentsTaught ?? 0,
-              certificates: (t.certificates ?? '')
-                .split('\n')
-                .map((s) => s.trim())
-                .filter(Boolean),
-              samples: parseSamples(t.samples),
-            })
-          )
-          setTeachers(list)
-        })
-        .catch(() => {
-          if (!cancelled) setTeachers(null) // خطا → fallback فایل محتوا
-        })
-    }
-    load()
-    // صفحه در هر ناوبری از نو mount می‌شود — داده تازه می‌آید
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
-  const teacherList: TeacherItem[] =
-    teachers && teachers.length > 0
-      ? teachers
-      : c.teachers.items.map((t) => ({
-          name: t.name,
-          role: t.role,
-          bio: t.bio,
-          tag: t.tag,
-          langs: t.langs,
-          image: t.image ?? null,
-          resume: t.resume,
-          experienceYears: t.experienceYears,
-          studentsTaught: t.studentsTaught,
-          certificates: t.certificates
-            .split('\n')
-            .map((s) => s.trim())
-            .filter(Boolean),
-          samples: parseSamples(t.samples),
-        }))
   return (
     <div id="page-about">
       {/* معرفی */}
@@ -273,94 +169,14 @@ export function AboutPage({ onNavigate }: AboutPageProps) {
         </div>
       </section>
 
-      {/* 👩‍🏫 تیم معلم‌ها */}
-      <section className="py-20 bg-sec-leaf relative overflow-hidden">
-        {/* 🌊 لبهٔ منحنی از بخش کره‌ای + نقاط تزئینی */}
-        <CurveDivider fill="var(--color-sec-butter)" />
-        <div
-          aria-hidden="true"
-          className="absolute bottom-24 right-[3%] w-48 h-48 ct-dots opacity-45 [mask-image:radial-gradient(circle,black,transparent_70%)] hidden md:block"
-        ></div>
-        <div
-          aria-hidden="true"
-          className="char-bg pointer-events-none select-none top-8 left-0"
-          style={{ fontSize: '200px', opacity: 0.03 }}
-        >
-          团队
-        </div>
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="text-center mb-14">
-            <h2 className="text-2xl md:text-3xl font-bold text-brown-dark mb-3">{c.teachers.title}</h2>
-            <p className="text-brown-light max-w-2xl mx-auto">{c.teachers.subtitle}</p>
-          </div>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            {teacherList.map((t, i) => (
-              <article
-                key={i}
-                className="group bg-white rounded-3xl border border-sage-light/20 overflow-hidden card-hover card-wave text-center"
-              >
-                {/* پرترهٔ معلم — یا گرادیان برند با آیکون */}
-                <div className="relative h-56 overflow-hidden bg-gradient-to-br from-sage-light/50 via-butter/40 to-peach-light/50">
-                  {t.image ? (
-                    <img
-                      src={t.image}
-                      alt={`${t.name} — ${t.role}`}
-                      loading="lazy"
-                      decoding="async"
-                      className="w-full h-full object-cover object-top transition-transform duration-700 group-hover:scale-105"
-                      onError={(e) => {
-                        ;(e.target as HTMLImageElement).style.display = 'none'
-                      }}
-                    />
-                  ) : (
-                    <span className="absolute inset-0 flex items-center justify-center">
-                      <User className="w-16 h-16 text-sage-dark/60" />
-                    </span>
-                  )}
-                  {/* برچسب تخصص */}
-                  <span className="absolute top-3 right-3 bg-white/85 backdrop-blur text-sage-dark text-[10px] font-bold uppercase tracking-wider px-3 py-1 rounded-full shadow-sm">
-                    {t.tag}
-                  </span>
-                </div>
-                <div className="p-6">
-                  <h3 className="text-base font-bold text-brown-dark mb-0.5">{t.name}</h3>
-                  <p className="text-xs font-semibold text-sage-dark mb-3">{t.role}</p>
-                  <p className="text-xs text-brown-light leading-relaxed mb-4">{t.bio}</p>
-                  {/* زبان‌های تدریس */}
-                  <div className="flex flex-wrap justify-center gap-1.5 pt-3 border-t border-sage-light/15">
-                    {t.langs.map((lang) => (
-                      <span
-                        key={lang}
-                        className="inline-flex items-center gap-1 bg-cream text-brown text-[10px] font-semibold px-2.5 py-1 rounded-full"
-                      >
-                        <Languages className="w-3 h-3 text-sage-dark" />
-                        {lang}
-                      </span>
-                    ))}
-                  </div>
-                  {/* 🆕 دکمهٔ باز کردن رزومه و نمونه‌های تدریس */}
-                  <button
-                    type="button"
-                    onClick={() => setProfileTeacher(t)}
-                    aria-label={`${c.teachers.cardCta} — ${t.name}`}
-                    className="mt-4 w-full inline-flex items-center justify-center gap-2 bg-cream text-brown-dark text-xs font-bold px-4 py-2.5 rounded-full border border-sage-light/40 hover:bg-sage hover:border-sage hover:shadow-[0_2px_10px_rgba(168,201,160,0.35)] transition-all cursor-pointer min-h-[38px]"
-                  >
-                    <ScrollText className="w-4 h-4 text-sage-dark" aria-hidden="true" />
-                    {c.teachers.cardCta}
-                  </button>
-                </div>
-              </article>
-            ))}
-          </div>
-        </div>
-      </section>
+      {/* 👩‍🏫 بخش تیم معلم‌ها — به درخواست مالک حذف شد */}
 
       {/* 📸 گالری «Life at Chinese Toon» — به درخواست مالک به‌طور کامل حذف شد */}
 
       {/* تماس */}
       <section className="py-20 bg-cream relative overflow-hidden">
-        {/* 🌊 لبهٔ منحنی از بخش سبز تیم + برگ تزئینی */}
-        <CurveDivider fill="var(--color-sec-leaf)" />
+        {/* 🌊 لبهٔ منحنی از بخش کره‌ای + برگ تزئینی */}
+        <CurveDivider fill="var(--color-sec-butter)" />
         <svg
           aria-hidden="true"
           className="absolute bottom-16 left-[5%] w-11 opacity-50 animate-ct-floatSlow hidden md:block"
@@ -420,15 +236,6 @@ export function AboutPage({ onNavigate }: AboutPageProps) {
           </div>
         </div>
       </section>
-
-      {/* 🪟 مودال «رزومه و نمونه‌های تدریس» استاد */}
-      {profileTeacher && (
-        <TeacherProfileModal
-          teacher={profileTeacher}
-          onClose={() => setProfileTeacher(null)}
-          onNavigate={onNavigate}
-        />
-      )}
     </div>
   )
 }
