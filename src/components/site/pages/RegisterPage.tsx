@@ -58,6 +58,19 @@ function rememberPayOrigin() {
   }
 }
 
+// 🔒 گیت حساب — ثبت‌نام کلاس فقط با حساب کاربری. مقصد بازگشت ذخیره می‌شود تا
+// بعد از ورود/ثبت‌نام موفق (consumePayRedirect در AccountPage) به همین فرم
+// برگردیم؛ کلاس انتخاب‌شده در sessionStorage می‌ماند و از دست نمی‌رود
+// (هماهنگ با دروازهٔ صفحهٔ پرداخت).
+function continueToAccount() {
+  try {
+    sessionStorage.setItem('ct-pay-redirect', window.location.pathname + window.location.search)
+  } catch {
+    // بدون حافظه فقط به صفحهٔ حساب می‌رویم
+  }
+  appNavigate('/account')
+}
+
 const inputCls =
   'w-full px-4 py-3 rounded-xl border border-sage-light/40 bg-cream/50 text-brown placeholder:text-brown-light/50 text-sm focus:outline-none focus:border-sage focus:ring-[3px] focus:ring-sage/20 transition-all'
 
@@ -68,10 +81,12 @@ const labelCls = 'block text-sm font-medium text-brown-dark mb-2'
 //  در sessionStorage ذخیره می‌شود و اینجا با useSyncExternalStore خوانده
 //  می‌شود — بدون hydration-mismatch و بدون setState در effect.
 // ---------------------------------------------------------------------
-// 👤 فاز ۳۱: کاربر واردشده فیلدهای نام/ایمیل/تلفن را نمی‌بیند (از حسابش ارسال می‌شود)
-// و بعد از ثبت موفق، صفحهٔ پرداخت خودکار باز می‌شود؛ دکمهٔ پرداخت از جزئیات کلاس حذف شد.
+// 👤 فاز ۳۱: نام/ایمیل/تلفن از حساب کاربر واردشده خوانده می‌شود و بعد از ثبت موفق،
+// صفحهٔ پرداخت خودکار باز می‌شود؛ دکمهٔ پرداخت از جزئیات کلاس حذف شد.
 // فاز ۳۴: کارت پرداخت مستقل پایین فرم Register هم به درخواست مالک حذف شد —
-// ورود به صفحهٔ Register فقط فرم را نشان می‌دهد؛ پرداخت فقط بعد از ثبت موفق (صفحهٔ Thank you).
+// پرداخت فقط بعد از ثبت موفق (صفحهٔ Thank you).
+// 🔒 گیت حساب: مهمان هرگز فرم را نمی‌بیند — فقط کارت «ورود/ثبت‌نام حساب»؛
+// API ثبت‌نام هم بدون سشن معتبر ۴۰۱ برمی‌گرداند.
 const SELECTED_CLASS_KEY = 'ct-selected-class'
 
 const selectedClassListeners = new Set<() => void>()
@@ -280,7 +295,7 @@ export function RegisterPage({ onToast }: RegisterPageProps) {
   const selectedClass = useSelectedClass()
   // 👤 فاز ۳۱ — کاربر واردشده اطلاعات تکراری (نام/ایمیل/تلفن) نمی‌بیند؛
   // این سه مقدار خودکار از پروفایل حساب ارسال می‌شود و فقط یک کارت «Registering as» نشان داده می‌شود.
-  const { user } = useUser()
+  const { loading: userLoading, user } = useUser()
   const accountName = user
     ? [user.firstName, user.lastName]
         .map((s) => (s || '').trim())
@@ -305,10 +320,8 @@ export function RegisterPage({ onToast }: RegisterPageProps) {
     currency: string
     breakdown: CodePreview | null
   } | null>(null)
+  // 👤 نام/ایمیل/تلفن از حساب کاربری خوانده می‌شود — این فرم فقط جزئیات کلاس می‌گیرد
   const [form, setForm] = useState({
-    name: '',
-    email: '',
-    phone: '',
     level: '',
     classType: 'group',
     goal: '',
@@ -550,11 +563,9 @@ export function RegisterPage({ onToast }: RegisterPageProps) {
     e.preventDefault()
     setSending(true)
     setError('')
-    // 👤 برای کاربر واردشده، نام/ایمیل/تلفن از حساب ارسال می‌شود (بدون پرسش دوباره)
+    // 👤 نام/ایمیل/تلفن سمت سرور از پروفایل حساب تأییدشده خوانده می‌شود — نه از مرورگر
     const payload = {
-      ...(user
-        ? { ...form, name: accountName, email: user.email, phone: user.phone ?? '' }
-        : form),
+      ...form,
       classTitle: selectedClass ?? '',
       // 🗓️ ترجیحات برنامه — سرور همه را دوباره اعتبارسنجی می‌کند
       timezone: sched.timezone,
@@ -609,9 +620,6 @@ export function RegisterPage({ onToast }: RegisterPageProps) {
 
   const reset = () => {
     setForm({
-      name: '',
-      email: '',
-      phone: '',
       level: '',
       classType: lockedClass ? classTypeKeyFor(lockedClass.type) : 'group',
       goal: '',
@@ -639,7 +647,37 @@ export function RegisterPage({ onToast }: RegisterPageProps) {
               <p className="text-brown-light">{c.subtitle}</p>
             </div>
 
-            {!submitted ? (
+            {/* ⏳ تا مشخص شدن وضعیت حساب، نه گیت و نه فرم — ضد پرش ناگهانی برای کاربر واردشده */}
+            {userLoading ? (
+              <div className="bg-white rounded-3xl p-10 shadow-lg border border-sage-light/20 text-center">
+                <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-sage-dark" />
+                <p className="text-sm text-brown-light">Loading…</p>
+              </div>
+            ) : !user ? (
+              /* 🔒 گیت حساب — ثبت‌نام کلاس فقط با حساب کاربری؛ بعد از ورود/ثبت‌نام
+                  به همین صفحه با همان کلاس انتخابی برمی‌گردیم (هماهنگ با CheckoutPage) */
+              <div className="bg-white rounded-3xl border border-sage-light/20 shadow-lg p-8 md:p-10 text-center animate-ct-fadeInUp">
+                <div className="w-20 h-20 rounded-full bg-sage-light/30 mx-auto mb-6 flex items-center justify-center">
+                  <Lock className="w-9 h-9 text-sage-dark" />
+                </div>
+                <h2 className="text-2xl font-bold text-brown-dark mb-3">{c.gateTitle}</h2>
+                <p className="text-brown-light text-sm max-w-md mx-auto mb-8 leading-relaxed">{c.gateText}</p>
+                <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                  <button
+                    onClick={continueToAccount}
+                    className="bg-sage text-brown-dark px-8 py-3.5 rounded-2xl text-sm font-bold hover:bg-sage-dark transition-colors cursor-pointer inline-flex items-center justify-center gap-2 min-h-[48px]"
+                  >
+                    <UserRound className="w-4 h-4" /> {c.gateRegister}
+                  </button>
+                  <button
+                    onClick={continueToAccount}
+                    className="px-8 py-3.5 rounded-2xl text-sm font-semibold text-brown border border-sage-light/50 bg-white/70 hover:border-sage transition-colors cursor-pointer inline-flex items-center justify-center min-h-[48px]"
+                  >
+                    {c.gateLogin}
+                  </button>
+                </div>
+              </div>
+            ) : !submitted ? (
               <div className="bg-white rounded-3xl p-8 md:p-10 shadow-lg border border-sage-light/20">
                 {/* کلاس انتخاب‌شده از صفحهٔ کلاس‌ها / نتیجهٔ آزمون */}
                 {selectedClass && (
@@ -687,55 +725,6 @@ export function RegisterPage({ onToast }: RegisterPageProps) {
                         Edit profile
                       </button>
                     </div>
-                  )}
-
-                  {!user && (
-                  <div className="grid md:grid-cols-2 gap-6">
-                    <div>
-                      <label htmlFor="reg-name" className={labelCls}>
-                        {c.name} *
-                      </label>
-                      <input
-                        id="reg-name"
-                        type="text"
-                        required
-                        value={form.name}
-                        onChange={set('name')}
-                        className={inputCls}
-                        placeholder={c.namePlaceholder}
-                      />
-                    </div>
-                    <div>
-                      <label htmlFor="reg-email" className={labelCls}>
-                        {c.email} *
-                      </label>
-                      <input
-                        id="reg-email"
-                        type="email"
-                        required
-                        value={form.email}
-                        onChange={set('email')}
-                        className={inputCls}
-                        placeholder={c.emailPlaceholder}
-                      />
-                    </div>
-                  </div>
-                  )}
-
-                  {!user && (
-                  <div>
-                    <label htmlFor="reg-phone" className={labelCls}>
-                      {c.phone}
-                    </label>
-                    <input
-                      id="reg-phone"
-                      type="tel"
-                      value={form.phone}
-                      onChange={set('phone')}
-                      className={inputCls}
-                      placeholder={c.phonePlaceholder}
-                    />
-                  </div>
                   )}
 
                   <div>

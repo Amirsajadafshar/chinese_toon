@@ -8,15 +8,14 @@ import { isValidTimezone } from '@/lib/timezones'
 import { sanitizeDays, sanitizeTimes, MAX_PREFERRED_DAYS, MAX_PREFERRED_TIMES, WEEKDAY_KEYS } from '@/lib/schedule'
 
 // ثبت درخواست ثبت‌نام از فرم صفحهٔ Register
+// 🔐 فقط با حساب کاربری — مهمان رد می‌شود (۴۰۱)؛ نام/ایمیل/تلفن سمت سرور از
+//     پروفایل تأییدشدهٔ کاربر خوانده می‌شود، نه از بدنهٔ درخواست.
 // 🎂 تاریخ تولد اینجا گرفته نمی‌شود — در ثبت‌نام حساب کاربری اجباری است
 //     (User.dateOfBirth) و سرور از روی آن محاسبه می‌کند.
 // 🗓️ فاز ۴۷: ترجیحات برنامه ساخت‌یافته است — منطقهٔ زمانی IANA + حداکثر ۳ روز +
 //     حداکثر ۲ بازهٔ ساعتی + روز در هفته + تأیید صریح «ترجیح است، نه برنامهٔ نهایی».
 //     سرور همهٔ این‌ها را دوباره اعتبارسنجی می‌کند — بدون scheduleAck ثبت رد می‌شود.
 const registrationSchema = z.object({
-  name: z.string().trim().min(2).max(100),
-  email: z.string().email().max(200),
-  phone: z.string().trim().max(30).optional().or(z.literal('')),
   level: z.string().trim().min(1).max(60),
   classType: z.string().trim().min(1).max(60).default('group'),
   // عنوان کلاس انتخاب‌شده (وقتی کاربر از دکمهٔ Register صفحهٔ کلاس‌ها/آزمون می‌آید)
@@ -40,6 +39,22 @@ export async function POST(req: NextRequest) {
   const rl = await rateLimit('register', req, 6, 10 * 60, 10 * 60)
   if (!rl.ok) return tooManyRequests(rl)
 
+  // 🔐 ثبت‌نام کلاس فقط با حساب کاربری — مهمان هرگز ثبت نمی‌شود
+  // (هم‌راستا با POST /api/payments/orders؛ دروازهٔ UI در RegisterPage است)
+  const viewer = await getUserFromRequest(req).catch(() => null)
+  if (!viewer) {
+    return NextResponse.json(
+      { error: 'Please sign in to register for a class', code: 'AUTH_REQUIRED' },
+      { status: 401 }
+    )
+  }
+
+  // 👤 مشخصات تماس از پروفایل تأییدشدهٔ حساب می‌آید — نه از مرورگر
+  const accountName =
+    [viewer.firstName, viewer.lastName]
+      .map((s) => (s || '').trim())
+      .filter(Boolean)
+      .join(' ') || viewer.email.split('@')[0]
 
   try {
     const body = await req.json()
@@ -110,70 +125,48 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 🛡️ ضد رکورد تکراری (بند ۵ و ۱۲ تسک پایداری) — تصمیم سمت سرور:
-    //
-    // ۱) کاربرِ واردشده: اگر برای «همان کلاس» قبلاً رکورد ثبت‌نامِ معتبر داشته
-//     باشد، همان رکورد با ترجیحات تازه به‌روز می‌شود و برگردانده می‌شود —
-//     هرگز رکورد دوم ساخته نمی‌شود (یک دانش‌پذیر واقعی = یک رکورد پایدار
-//     برای هر کلاس، حتی بعد از redeploy/لاگین دوباره).
-    // ۲) مهمان (جریان قدیمی): فقط محافظ پنجرهٔ ۶۰ ثانیه‌ای علیه دابل‌کلیک.
-    const viewer = await getUserFromRequest(req).catch(() => null)
-
-    if (viewer) {
-      const sameClass = await db.registration.findFirst({
-        where: {
-          deletedAt: null,
-          userId: viewer.id,
-          level: d.level,
-          classType: d.classType,
-          ...(d.classTitle ? { classTitle: d.classTitle } : {}),
+    // 🛡️ ضد رکورد تکراری (بند ۵ و ۱۲ تسک پایداری) — کاربرِ واردشده: اگر برای
+    // «همان کلاس» قبلاً رکورد ثبت‌نامِ معتبر داشته باشد، همان رکورد با ترجیحات
+    // تازه به‌روز می‌شود و برگردانده می‌شود — هرگز رکورد دوم ساخته نمی‌شود
+    // (یک دانش‌پذیر واقعی = یک رکورد پایدار برای هر کلاس، حتی بعد از redeploy).
+    const sameClass = await db.registration.findFirst({
+      where: {
+        deletedAt: null,
+        userId: viewer.id,
+        level: d.level,
+        classType: d.classType,
+        ...(d.classTitle ? { classTitle: d.classTitle } : {}),
+      },
+      orderBy: { createdAt: 'desc' },
+    })
+    if (sameClass) {
+      // ♻️ استفادهٔ مجدد از رکورد موجود — ترجیحات/پیام تازه به‌روز می‌شود
+      const updated = await db.registration.update({
+        where: { id: sameClass.id },
+        data: {
+          name: accountName,
+          email: viewer.email,
+          phone: viewer.phone ?? null,
+          goal: d.goal || null,
+          message: d.message || null,
+          timezone,
+          preferredDays: JSON.stringify(days),
+          preferredTimes: JSON.stringify(times),
+          daysPerWeek,
+          scheduleAck: d.scheduleAck === true,
         },
-        orderBy: { createdAt: 'desc' },
       })
-      if (sameClass) {
-        // ♻️ استفادهٔ مجدد از رکورد موجود — ترجیحات/پیام تازه به‌روز می‌شود
-        const updated = await db.registration.update({
-          where: { id: sameClass.id },
-          data: {
-            name: d.name,
-            email: d.email,
-            phone: d.phone || null,
-            goal: d.goal || null,
-            message: d.message || null,
-            timezone,
-            preferredDays: JSON.stringify(days),
-            preferredTimes: JSON.stringify(times),
-            daysPerWeek,
-            scheduleAck: d.scheduleAck === true,
-          },
-        })
-        return NextResponse.json({ ok: true, id: updated.id, duplicate: true, reused: true }, { status: 200 })
-      }
-    } else {
-      const recentWindow = new Date(Date.now() - 60_000)
-      const dup = await db.registration.findFirst({
-        where: {
-          email: d.email,
-          level: d.level,
-          classType: d.classType,
-          classTitle: d.classTitle || null,
-          createdAt: { gte: recentWindow },
-        },
-        orderBy: { createdAt: 'desc' },
-      })
-      if (dup) {
-        return NextResponse.json({ ok: true, id: dup.id, duplicate: true }, { status: 200 })
-      }
+      return NextResponse.json({ ok: true, id: updated.id, duplicate: true, reused: true }, { status: 200 })
     }
 
     const saved = await db.registration.create({
       data: {
-        name: d.name,
-        email: d.email,
-        phone: d.phone || null,
-        // 🔗 پیوند پایدار به حساب کاربری (وقتی وارد شده باشد) — زنجیرهٔ
+        name: accountName,
+        email: viewer.email,
+        phone: viewer.phone ?? null,
+        // 🔗 پیوند پایدار به حساب کاربری — زنجیرهٔ
         // User ↔ UniqueCode ↔ Registration ↔ Order ↔ Payment
-        ...(viewer ? { userId: viewer.id } : {}),
+        userId: viewer.id,
         level: d.level,
         classType: d.classType,
         classTitle: d.classTitle || null,

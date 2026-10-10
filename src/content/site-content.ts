@@ -1567,6 +1567,12 @@ export const siteContent = {
     successText2: "We'll contact you soon with the next steps.",
     successPayNote: "Review your order and continue to payment.",
     againButton: "Submit Another Registration",
+    // 🔒 گیت حساب — ثبت‌نام کلاس فقط با حساب کاربری (هماهنگ با دروازهٔ صفحهٔ پرداخت)
+    gateTitle: "Sign in to register for a class",
+    gateText:
+      "Class registration requires a Chinese Toon account. It takes less than a minute — and your registration is linked to your profile for easy follow-up.",
+    gateRegister: "Create Account",
+    gateLogin: "Sign In",
   },
 
   // ---------------------------------------------------------------
